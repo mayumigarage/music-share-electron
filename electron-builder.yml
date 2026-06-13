@@ -1,0 +1,10 @@
+appId: com.example.musicshare
+productName: MusicShare
+directories:
+  output: release
+files:
+  - dist/main/**/*
+  - dist/renderer/**/*
+  - src/renderer/index.html
+extraResources:
+  - assets/players/**

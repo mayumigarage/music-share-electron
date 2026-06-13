@@ -1,0 +1,224 @@
+node_modules/electron には npm パッケージ自体は入っていますが、実際の Electron バイナリ（electron.exe）がダウンロードされていません。
+
+node_modules/electron/index.js:17 は path.txt ファイルを探して dist/electron.exe のパスを解決しようとしますが、path.txt が存在しないためエラーを投げています。
+
+修正方法（推奨）
+
+以下のコマンドを順番に実行してください：
+
+# 1. 壊れた electron フォルダを削除
+Remove-Item -Recurse -Force "C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron\node_modules\electron"
+
+# 2. 再インストール
+cd "C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron"
+npm install
+
+うまくいかない場合の代替案
+
+代替案A — install.js を手動実行：
+cd "C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron\node_modules\electron"
+node install.js
+
+代替案B — npm キャッシュをクリアしてから再インストール：
+cd "C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron"
+Remove-Item -Recurse -Force "node_modules/electron"
+npm cache clean --force
+npm install
+
+確認方法
+
+以下のファイルが存在すれば正常です：
+- C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron\node_modules\electron\path.txt
+- C:\Users\Mayumi_Garage\Documents\GitHub\music-share-electron\node_modules\electron\dist\electron.exe
+
+よくある原因：初回 npm install 時のネットワーク切断、プロキシ/ファイアウォールによる
+GitHub Releases へのアクセス遮 疫、または --ignore-scripts付きでインストールした場合などです。
+
+まずは Remove-Item + npm install を試してみてください。
+
+
+--
+1. 依存関係をインストール（初回のみ）
+
+npm install
+
+---
+2. サーバー（Socket.IO）を起動
+
+別のターミナル（PowerShell）で：
+
+npm run server
+
+▎ tsc -p tsconfig.server.json でサーバー側 TypeScript をコンパイルし、dist/server/server/server.js を実行します。
+
+---
+3. Electron（Main + Renderer）を起動
+
+別のターミナルで：
+
+npm start
+
+▎ tsc -p tsconfig.main.json で Main プロセスをコンパイルし、Electron を起動します。
+▎ Renderer は file:// プロトコルで index.html を読み込むため、事前コンパイル不要です。
+
+---
+補足：一度に全部ビルドしたい場合
+
+npm run build
+
+▎ Main / Renderer / Server の TypeScript を一括コンパイルします。ビルド後は npm start / npm run server の起動が少し速くなります（コンパイルスキップはできませんが）。
+
+---
+推奨の開発フロー
+
+1. ターミナルA: npm run server（サーバー起動しっぱなし）
+2. ターミナルB: npm start（Electron 起動）
+
+注意: サーバーが起動していない状態で Electron を起動すると、Socket.IO 接続に失敗し、ルーム作成・参加ができません。必ず 先にサーバーを起動 してください。
+
+✻ Baked for 18s
+
+
+修正後の確認手順（テスト項目）
+
+1. ビルド
+npm run build   # または tsc / tsx 等のプロジェクト固有のビルドコマンド
+1. ※ spotify-auth.ts は TypeScript なのでビルドし直す必要があります。SpotifyPlayer.html は静的アセットなのでビルド不要です。
+2. Spotify 認証
+  - アプリを起動し、Spotify OAuth 認証を実行します。
+  - 認証成功後、get-spotify-token でアクセストークンが取得できることを確認します。
+3. プレイヤー初期化の確認
+  - Spotify トラックを読み込む（またはプレイヤーを Spotify に切り替える）。
+  - DevTools（Player WebContentsView）のコンソールで initialization_error が出ないことを確認。
+  - [PlayerProxy] Player error: init|Failed to initialize player が出力されなくなるはずです。
+  - 代わりに ready メッセージが送信され、ステータスが "Spotify Ready..." に変わることを確認。
+4. 再生制御の確認
+  - 再生開始、一時停止、シークバー操作が正常に動作するか確認。
+  - これは user-modify-playback-state スコープが正しく機能している証拠です。
+5. 切り替え耐久テスト
+  - YouTube ↔ Spotify 間で複数回プレイヤーを切り替え、毎回 Spotify プレイヤーが正常に初期化されることを確認。メモリリークや接続失敗がないか確認します。
+
+---
+調査で問題がなかった項目
+
+┌────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
+│          項目          │                                              状況                                              │
+├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ nodeIntegration: false │ player-bridge.ts で正しく設定済み                                                              │
+├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ contextIsolation: true │ player-bridge.ts で正しく設定済み                                                              │
+├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ sandbox: true          │ player-bridge.ts で正しく設定済み。Spotify SDK の動作を阻害する設定ではありませんでした        │
+├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ autoplay-policy        │ main.ts で no-user-gesture-required と正しく設定済み                                           │
+├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ CSP                    │ player-server.ts で CSP は設定されておらず、Spotify SDK をブロックするものではありませんでした │
+
+ Renderにデプロイするには？
+  ゲスト側の接続方法は？
+
+  Thought for 12s, read 1 file
+
+まず、プロジェクトの実際のコードを確認してから、Render へのデプロイ方法とゲスト接続方法を説明します。
+
+  Thought for 19s, read 4 files
+
+1. Render へのデプロイ方法
+
+現在のコードベースで Render にデプロイするには、サーバー側の準備とクライアント側の接続先変更が必要です。
+
+サーバー側（src/server/）
+
+server.ts は既に process.env.PORT を読み込むようになっているので、Render の動的ポート割り当てに対応しています。
+
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+
+ただし、package.json の start は Electron 用なので、Render 用の起動スクリプトを追加してください：
+
+{
+  "scripts": {
+    "start": "...", // Electron 用（既存）
+    "server": "tsc -p tsconfig.server.json && node dist/server/server/server.js",
+    "server:prod": "node dist/server/server/server.js",
+    "build:server": "tsc -p tsconfig.server.json"
+  }
+}
+
+Render ダッシュボードでの設定
+
+┌───────────────┬─────────────────────────────────────┐
+│     項目      │               設定値                │
+├───────────────┼─────────────────────────────────────┤
+│ Environment   │ Node                                │
+├───────────────┼─────────────────────────────────────┤
+│ Build Command │ npm install && npm run build:server │
+├───────────────┼─────────────────────────────────────┤
+│ Start Command │ npm run server:prod                 │
+├───────────────┼─────────────────────────────────────┤
+│ Plan          │ Free でも可（WebSocket 対応済み）   │
+└───────────────┴─────────────────────────────────────┘
+
+▎ Render の Free プランでは 15 分間アイドルでスリープします。常時起動が必要なら有料プランにアップグレードしてください。
+
+クライアント側の接続先変更
+
+src/renderer/sync/websocket-client.ts:45 の localhost:5000 を Render の URL に変更します：
+
+// 開発時
+const SERVER_URL = 'ws://localhost:5000';
+
+// Render デプロイ時（wss:// を使用）
+const SERVER_URL = 'wss://musicshare-xxxx.onrender.com';
+
+環境変数で切り替える場合は、ビルド時に esbuild の define オプションを使うか、index.html に <meta> タグで埋め込む方法が簡単です：
+
+const SERVER_URL = (window as any).__SERVER_URL__ || 'ws://localhost:5000';
+
+---
+2. ゲスト側の接続方法
+
+アプリ起動後、ゲストがルームに参加する手順と内部処理は以下の通りです。
+
+UI 操作手順
+
+1. モーダルを開く
+アプリ起動時に表示されるルーム作成/参加モーダル（room-modal.ts）で、「参加する」タブを選択します。
+2. 情報を入力
+  - ルームID: ホストに教えてもらったID（例：873-921）を入力
+  - ユーザー名: 自分の表示名を入力
+3. 参加ボタンを押す
+wsClient.joinRoom(roomId, userName) が呼ばれ、サーバーに JoinRoom イベントが送信されます。
+
+内部処理フロー
+
+ゲスト: joinRoom(roomId, userName)
+  → Socket.IO サーバー: JoinRoom イベント
+    → room-manager.ts: ルーム存在確認 → メンバー追加
+    → ホストに: UserJoined 通知
+    → ゲストに: RoomJoined 通知（room + user オブジェクト）
+      → UI: 右パネルにメンバーリスト表示
+      → UI: キュー・履歴・プレイヤー状態を同期
+
+WebRTC P2P 接続（HostBroadcast モード時）
+
+ゲストが音声を受信する場合、ホストとの WebRTC 接続が確立されます：
+
+1. ホストが getDisplayMedia() で音声をキャプチャ
+2. ホストが各ゲストに対して RTCPeerConnection を作成し、SDPOffer を送信（Socket.IO 経由）
+3. ゲストが SDPAnswer を返信
+4. ICE Candidate を交換し、P2P 接続確立
+5. 音声ストリームがサーバーを経由せず、ホスト → ゲストに直接流れる
+
+▎ サーバーは シグナリング（SDP/ICE の中継）のみを行い、音声バイナリは一切転送しません。
+
+補足：同時接続数の制限
+
+第一フェーズではホスト1人に対してゲスト3〜5人までを推奨としています（RoomModal では maxGuests = 5 がデフォルト）。超過時はサーバー側で参加拒否または警告を返す実装が必要です。
+
+---
+必要であれば...
+
+- Render デプロイ用の start スクリプト追加と接続先を環境変数化する変更を実装できます
+- ゲスト参加時の人数制限・警告表示を handlers.ts / room-manager.ts に追加することも可能です
+
+どちらか対応しますか？

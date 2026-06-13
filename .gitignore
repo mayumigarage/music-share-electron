@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.npm
+yarn-error.log*
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Electron release artifacts
+release/
+
+# Logs
+crash.log
+*.log
+logs/
+
+# Environment variables (managed via Render dashboard)
+.env
+.env.local
+.env.*.local
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.eslintcache
+
+# Claude / temporary
+.claude/

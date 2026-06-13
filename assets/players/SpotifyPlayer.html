@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spotify Player</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #000; overflow: hidden; width: 100%; height: 100%; }
+    #status { color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <div id="status">Spotify Player initializing...</div>
+  <!--
+    Fallback note (Phase 5.8):
+    The Spotify Web Playback SDK is loaded from https://sdk.scdn.co.
+    file:// origins can load the SDK, but playback requires a valid OAuth token.
+    If the SDK refuses to initialize from file://, serve this HTML via a local
+    static server or a custom protocol (e.g., app://players/). In Phase 1,
+    the token is intentionally empty; playback will not work until auth is wired.
+  -->
+  <script>
+    let player = null;
+    let deviceId = null;
+    let currentTrackUri = null;
+    let reportInterval = null;
+    let currentDuration = 0;
+    let isPlaying = false;
+    let spotifyToken = '';
+    let previousToken = '';
+
+    /** Send a structured message to Main via the player preload bridge. */
+    function send(msg) {
+      if (window.electronPlayerAPI && window.electronPlayerAPI.sendMessage) {
+        window.electronPlayerAPI.sendMessage(msg);
+      }
+    }
+
+    /** Receive token updates from Main via player preload. */
+    if (window.electronPlayerAPI && window.electronPlayerAPI.onSpotifyToken) {
+      window.electronPlayerAPI.onSpotifyToken((token) => {
+        const newToken = token || '';
+        spotifyToken = newToken;
+        // Only reconnect if the player hasn't established a device yet (e.g. after
+        // an auth error or during initial load). Reconnecting while playing would
+        // interrupt playback, so we avoid it when a device is already active.
+        if (newToken && player && newToken !== previousToken && !deviceId) {
+          previousToken = newToken;
+          player.disconnect().then(() => player.connect()).then(() => {
+            if (deviceId) activateDevice(deviceId);
+          });
+        } else {
+          previousToken = newToken;
+        }
+      });
+    }
+
+    /** Activate this Web Playback SDK device so the Web API can control it. */
+    function activateDevice(id, shouldPlay = false, token = null) {
+      const authToken = token || spotifyToken;
+      if (!authToken) return Promise.resolve();
+      return fetch('https://api.spotify.com/v1/me/player', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ device_ids: [id], play: shouldPlay }),
+      }).catch(() => {
+        // ignore activation errors; playTrack will surface any real problems
+      });
+    }
+
+    /** Reconnect player and re-activate device to recover from error states. */
+    async function reconnectDevice() {
+      if (!player) return;
+      try {
+        await player.disconnect();
+        const success = await player.connect();
+        if (success && deviceId) {
+          await activateDevice(deviceId);
+        }
+      } catch {
+        // ignore reconnection errors
+      }
+    }
+
+    /**
+     * Called by the Spotify SDK once it has loaded.
+     *
+     * IMPORTANT: This callback MUST be defined BEFORE the SDK <script> tag.
+     * If defined after, the SDK may execute before the callback exists,
+     * causing a race condition that leads to initialization_error.
+     */
+    window.onSpotifyWebPlaybackSDKReady = async () => {
+      // Proactively fetch the token before creating the player.
+      // The token may have been broadcast via IPC before the page's
+      // onSpotifyToken listener was attached, so we must also request
+      // it explicitly here to avoid connecting with an empty token.
+      if (window.electronPlayerAPI && window.electronPlayerAPI.getSpotifyToken) {
+        try {
+          const token = await window.electronPlayerAPI.getSpotifyToken();
+          if (token) spotifyToken = token;
+        } catch {
+          // ignore
+        }
+      }
+
+      player = new Spotify.Player({
+        name: 'MusicShare Player',
+        getOAuthToken: async (cb) => {
+          // Always fetch a valid token from Main so the SDK never gets a stale one.
+          let token = spotifyToken;
+          if (window.electronPlayerAPI && window.electronPlayerAPI.getSpotifyToken) {
+            try {
+              const fresh = await window.electronPlayerAPI.getSpotifyToken();
+              if (fresh) token = fresh;
+            } catch {
+              // ignore
+            }
+          }
+          cb(token);
+        },
+        volume: 0.5,
+      });
+
+      player.addListener('ready', async ({ device_id }) => {
+        deviceId = device_id;
+        send({ type: 'ready' });
+        document.getElementById('status').textContent = 'Spotify Ready (authentication required for playback)';
+        await activateDevice(device_id);
+      });
+
+      player.addListener('not_ready', ({ device_id }) => {
+        deviceId = null;
+      });
+
+      player.addListener('player_state_changed', (state) => {
+        if (!state) return;
+        isPlaying = !state.paused;
+        const currentTime = state.position / 1000;
+        currentDuration = state.duration / 1000;
+
+        const currentTrack = state.track_window?.current_track;
+        const trackInfo = currentTrack ? {
+          title: currentTrack.name,
+          artist: currentTrack.artists.map((a) => a.name).join(', '),
+          thumbnailUrl: currentTrack.album?.images?.[0]?.url || '',
+        } : null;
+
+        send({ type: 'state', isPlaying, currentTime, duration: currentDuration, trackInfo });
+
+        if (isPlaying) {
+          startReportInterval();
+          send({ type: 'playing' });
+        } else {
+          stopReportInterval();
+          send({ type: 'paused' });
+        }
+      });
+
+      player.addListener('initialization_error', ({ message }) => {
+        send({ type: 'error', error: 'init|' + message });
+        document.getElementById('status').textContent = 'Spotify Init Error: ' + message;
+      });
+
+      player.addListener('authentication_error', async ({ message }) => {
+        send({ type: 'error', error: 'auth|' + message });
+        document.getElementById('status').textContent = 'Spotify Auth Error: ' + message;
+        // Try to recover by fetching a fresh token and reconnecting
+        if (window.electronPlayerAPI && window.electronPlayerAPI.getSpotifyToken) {
+          try {
+            const fresh = await window.electronPlayerAPI.getSpotifyToken();
+            if (fresh) {
+              spotifyToken = fresh;
+              previousToken = fresh;
+              await reconnectDevice();
+            }
+          } catch {
+            // ignore recovery errors
+          }
+        }
+      });
+
+      player.addListener('account_error', ({ message }) => {
+        send({ type: 'error', error: 'account|' + message });
+      });
+
+      player.addListener('playback_error', ({ message }) => {
+        send({ type: 'error', error: 'playback|' + message });
+      });
+
+      player.connect().then((success) => {
+        if (!success) {
+          send({ type: 'error', error: 'connect_failed' });
+          document.getElementById('status').textContent = 'Spotify connection failed';
+        }
+      });
+    };
+
+    function reportTimeUpdate() {
+      if (!player) return;
+      player.getCurrentState().then((state) => {
+        if (!state) return;
+        const positionSec = state.position / 1000;
+        const durationSec = state.duration / 1000;
+        send({ type: 'timeUpdate', currentTimeSeconds: positionSec });
+
+        // Detect track end for services that don't emit 'ended' (Spotify).
+        if (durationSec > 0 && positionSec >= durationSec - 0.3) {
+          send({ type: 'ended' });
+          stopReportInterval();
+        }
+      }).catch(() => {
+        // ignore
+      });
+    }
+
+    function startReportInterval() {
+      stopReportInterval();
+      reportInterval = setInterval(reportTimeUpdate, 250);
+    }
+
+    function stopReportInterval() {
+      if (reportInterval) {
+        clearInterval(reportInterval);
+        reportInterval = null;
+      }
+    }
+
+    // ========================================================================
+    // Global API invoked by Main process via executeJavaScript
+    // ========================================================================
+
+    async function playTrack(url) {
+      let uri = url;
+      if (url.includes('open.spotify.com')) {
+        const match = url.match(/track\/([a-zA-Z0-9]+)/);
+        if (match) uri = 'spotify:track:' + match[1];
+      }
+      currentTrackUri = uri;
+
+      // Ensure we have a valid token before calling the Web API
+      let token = spotifyToken;
+      if (window.electronPlayerAPI && window.electronPlayerAPI.getSpotifyToken) {
+        try {
+          const fresh = await window.electronPlayerAPI.getSpotifyToken();
+          if (fresh) {
+            token = fresh;
+            spotifyToken = fresh;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!token) {
+        send({ type: 'error', error: 'auth_required|Spotify playback requires authentication' });
+        return;
+      }
+      if (!deviceId) {
+        send({ type: 'error', error: 'no_device|Spotify player not ready' });
+        return;
+      }
+
+      try {
+        // Ensure device is active before attempting playback (fire-and-forget;
+        // the play request itself will also activate the device).
+        activateDevice(deviceId, false, token).catch(() => {});
+
+        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ uris: [uri] }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          const msg = data?.error?.message || `HTTP ${response.status}`;
+          // Provide a clearer message for common errors
+          let friendly = msg;
+          if (response.status === 403) {
+            friendly = 'Spotify playback requires a Premium account (HTTP 403)';
+          } else if (response.status === 404) {
+            friendly = 'No active Spotify device found (HTTP 404). Retrying...';
+          } else if (response.status === 401) {
+            friendly = 'Spotify token expired or invalid (HTTP 401)';
+          }
+          throw new Error(friendly);
+        }
+
+        send({ type: 'loaded', uri });
+      } catch (err) {
+        const errorMsg = 'playback|' + err.message;
+        send({ type: 'error', error: errorMsg });
+
+        // Attempt to recover by reconnecting the device on 404/no-device errors
+        if (err.message.includes('404') || err.message.includes('no_device')) {
+          await reconnectDevice();
+        }
+      }
+    }
+
+    function pause() {
+      if (!player) return;
+      player.getCurrentState().then((state) => {
+        if (state && state.track_window && state.track_window.current_track) {
+          player.pause();
+        }
+      }).catch(() => {
+        // ignore
+      });
+    }
+
+    function resume() {
+      if (!player) return;
+      player.getCurrentState().then((state) => {
+        if (state && state.track_window && state.track_window.current_track) {
+          player.resume();
+        }
+      }).catch(() => {
+        // ignore
+      });
+    }
+
+    function stop() {
+      if (player) {
+        player.getCurrentState().then((state) => {
+          if (state && state.track_window && state.track_window.current_track) {
+            player.pause();
+          }
+        }).catch(() => {
+          // ignore
+        });
+      }
+      stopReportInterval();
+      isPlaying = false;
+      currentDuration = 0;
+      currentTrackUri = null;
+      send({ type: 'stopped' });
+    }
+
+    function seek(seconds) {
+      if (player) player.seek(seconds * 1000);
+    }
+
+    function setVolume(volume) {
+      if (player) player.setVolume(volume);
+    }
+
+    /** Service-specific cleanup invoked by Main before destroying the WebContentsView. */
+    function cleanupPlayer() {
+      if (player && typeof player.disconnect === 'function') {
+        player.disconnect();
+      }
+    }
+  </script>
+  <!--
+    Load the Spotify Web Playback SDK AFTER the ready callback is defined.
+    Defining the callback before the script prevents the SDK from missing it
+    when the script executes, which avoids the "Failed to initialize player" error.
+  -->
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+</body>
+</html>

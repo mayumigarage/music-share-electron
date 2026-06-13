@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Apple Music Player</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #000; overflow: hidden; width: 100%; height: 100%; }
+    #status { color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <div id="status">Apple Music Player initializing...</div>
+  <!--
+    Fallback note (Phase 5.8):
+    Apple MusicKit JS v3 is loaded from https://js-cdn.music.apple.com.
+    file:// origins can load the script, but playback requires a valid
+    developerToken and user authentication. If the SDK enforces origin
+    restrictions, serve this HTML via a local static server or a custom
+    protocol (e.g., app://players/). In Phase 1 the developerToken is empty.
+  -->
+  <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"></script>
+  <script>
+    let music = null;
+    let reportInterval = null;
+    let currentDuration = 0;
+    let isPlaying = false;
+
+    /** Send a structured message to Main via the player preload bridge. */
+    function send(msg) {
+      if (window.electronPlayerAPI && window.electronPlayerAPI.sendMessage) {
+        window.electronPlayerAPI.sendMessage(msg);
+      }
+    }
+
+    async function initMusicKit() {
+      try {
+        await MusicKit.configure({
+          // Phase 1: empty developerToken — playback requires authentication.
+          developerToken: '',
+          app: {
+            name: 'MusicShare',
+            build: '1.0.0',
+          },
+        });
+
+        music = MusicKit.getInstance();
+
+        music.addEventListener('playbackStateDidChange', () => {
+          isPlaying = music.isPlaying;
+          const currentTime = music.currentPlaybackTime || 0;
+          currentDuration = music.currentPlaybackDuration || 0;
+
+          send({ type: 'state', isPlaying, currentTime, duration: currentDuration });
+
+          if (isPlaying) {
+            startReportInterval();
+            send({ type: 'playing' });
+          } else {
+            stopReportInterval();
+            send({ type: 'paused' });
+          }
+        });
+
+        music.addEventListener('playbackTimeDidChange', () => {
+          send({ type: 'timeUpdate', currentTimeSeconds: music.currentPlaybackTime || 0 });
+        });
+
+        music.addEventListener('playbackEnded', () => {
+          stopReportInterval();
+          send({ type: 'ended' });
+        });
+
+        send({ type: 'ready' });
+        document.getElementById('status').textContent = 'Apple Music Ready (authentication required for playback)';
+      } catch (err) {
+        const message = err.message || String(err);
+        send({ type: 'error', error: 'init|' + message });
+        document.getElementById('status').textContent = 'Apple Music Error: ' + message;
+      }
+    }
+
+    function reportState() {
+      if (!music) return;
+      isPlaying = music.isPlaying;
+      const currentTime = music.currentPlaybackTime || 0;
+      currentDuration = music.currentPlaybackDuration || 0;
+      send({ type: 'state', isPlaying, currentTime, duration: currentDuration });
+    }
+
+    function reportTimeUpdate() {
+      if (!music) return;
+      send({ type: 'timeUpdate', currentTimeSeconds: music.currentPlaybackTime || 0 });
+    }
+
+    function startReportInterval() {
+      stopReportInterval();
+      reportInterval = setInterval(() => {
+        reportState();
+        reportTimeUpdate();
+      }, 250);
+    }
+
+    function stopReportInterval() {
+      if (reportInterval) {
+        clearInterval(reportInterval);
+        reportInterval = null;
+      }
+    }
+
+    // Initialize once the DOM is ready and the script has loaded.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initMusicKit);
+    } else {
+      initMusicKit();
+    }
+
+    // ========================================================================
+    // Global API invoked by Main process via executeJavaScript
+    // ========================================================================
+
+    function playTrack(url) {
+      let id = url;
+      const match = url.match(/song[s]?\/[^/]+\/(\d+)/) || url.match(/i=(\d+)/);
+      if (match) id = match[1];
+
+      if (!music) {
+        send({ type: 'error', error: 'not_ready' });
+        return;
+      }
+
+      // Phase 1: without a valid developerToken and user auth we cannot play.
+      send({ type: 'error', error: 'auth_required|Apple Music playback requires developer token and user auth' });
+    }
+
+    function pause() {
+      if (music) music.pause();
+    }
+
+    function resume() {
+      if (music) music.play();
+    }
+
+    function stop() {
+      if (music) music.stop();
+      stopReportInterval();
+      isPlaying = false;
+      currentDuration = 0;
+    }
+
+    function seek(seconds) {
+      if (music) music.seekToTime(seconds);
+    }
+
+    function setVolume(volume) {
+      if (music) music.volume = volume;
+    }
+  </script>
+</body>
+</html>
