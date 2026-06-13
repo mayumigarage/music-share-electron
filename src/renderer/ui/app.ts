@@ -12,6 +12,7 @@ import { HistoryPanel } from './history-panel.js';
 import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
 import { RoomModal } from './room-modal.js';
+import { SettingsModal } from './settings-modal.js';
 import type {
   Room,
   User,
@@ -28,6 +29,7 @@ export class AppUI {
   private membersPanel: MembersPanel;
   private playerControl: PlayerControl;
   private roomModal: RoomModal;
+  private settingsModal: SettingsModal;
 
   private currentRoom: Room | null = null;
   private currentUser: User | null = null;
@@ -60,6 +62,7 @@ export class AppUI {
     this.membersPanel = new MembersPanel();
     this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine);
     this.roomModal = new RoomModal(wsClient);
+    this.settingsModal = new SettingsModal();
   }
 
   async init(): Promise<void> {
@@ -72,6 +75,7 @@ export class AppUI {
     this.membersPanel.init();
     this.playerControl.init();
     this.roomModal.init();
+    this.settingsModal.init();
 
     this.wsClient.onRoomCreated = (room, user) => this.handleRoomJoined(room, user);
     this.wsClient.onRoomJoined = (room, user) => this.handleRoomJoined(room, user);
@@ -286,7 +290,7 @@ export class AppUI {
 
     const settingsBtn = document.getElementById('btn-settings');
     settingsBtn?.addEventListener('click', () => {
-      this.showToast('設定機能は今後追加されます', 'info');
+      this.settingsModal.open();
     });
   }
 

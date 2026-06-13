@@ -22,6 +22,7 @@ import {
   SDPOfferPayload,
   SDPAnswerPayload,
   ICECandidatePayload,
+  RequestSDPOfferPayload,
 } from '../shared/models';
 import { RoomManager } from './room-manager';
 
@@ -253,6 +254,18 @@ export function registerHandlers(
       io.to(targetSocketId).emit('ICECandidate', {
         fromUserId: meta.userId,
         candidate: payload.candidate,
+      });
+    });
+
+    socket.on('RequestSDPOffer', (payload: RequestSDPOfferPayload) => {
+      const targetSocketId = userToSocket.get(payload.targetUserId);
+      if (!targetSocketId) return;
+
+      const meta = socketMeta.get(socket.id);
+      if (!meta) return;
+
+      io.to(targetSocketId).emit('RequestSDPOffer', {
+        fromUserId: meta.userId,
       });
     });
 

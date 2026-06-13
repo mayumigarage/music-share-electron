@@ -36,13 +36,14 @@ export class WebSocketClient {
   onSDPOffer: ((fromUserId: string, sdp: RTCSessionDescriptionInit) => void) | null = null;
   onSDPAnswer: ((fromUserId: string, sdp: RTCSessionDescriptionInit) => void) | null = null;
   onICECandidate: ((fromUserId: string, candidate: RTCIceCandidateInit) => void) | null = null;
+  onRequestSDPOffer: ((fromUserId: string) => void) | null = null;
 
   constructor() {
     this.connect();
   }
 
   connect(): void {
-    this.socket = io('ws://localhost:5000', {
+    this.socket = io('https://music-share-electron-server.onrender.com', {
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: 5,
@@ -136,6 +137,10 @@ export class WebSocketClient {
     this.socket.on('ICECandidate', ({ fromUserId, candidate }) => {
       this.onICECandidate?.(fromUserId, candidate);
     });
+
+    this.socket.on('RequestSDPOffer', ({ fromUserId }) => {
+      this.onRequestSDPOffer?.(fromUserId);
+    });
   }
 
   // ── Client → Server emitters ──
@@ -200,6 +205,11 @@ export class WebSocketClient {
   sendSDPOffer(targetUserId: string, sdp: RTCSessionDescriptionInit): void {
     if (!this.currentRoomId) return;
     this.socket?.emit('SDPOffer', { roomId: this.currentRoomId, targetUserId, sdp });
+  }
+
+  sendRequestSDPOffer(targetUserId: string): void {
+    if (!this.currentRoomId) return;
+    this.socket?.emit('RequestSDPOffer', { roomId: this.currentRoomId, targetUserId });
   }
 
   sendSDPAnswer(targetUserId: string, sdp: RTCSessionDescriptionInit): void {

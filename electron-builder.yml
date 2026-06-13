@@ -8,3 +8,24 @@ files:
   - src/renderer/index.html
 extraResources:
   - assets/players/**
+
+# CastLabs 製 Electron フォークのバイナリを直接使用（公式ミラーには存在しないバージョンのため）
+electronDist: ./node_modules/electron/dist
+
+# バージョン文字列に "+wvcus" が含まれるため、winCodeSign/rcedit のダウンロードが失敗するのを回避
+win:
+  signAndEditExecutable: false
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  identity: null          # コード署名を無効化（ローカルビルド用）
+  category: public.app-category.music
+  darkModeSupport: true

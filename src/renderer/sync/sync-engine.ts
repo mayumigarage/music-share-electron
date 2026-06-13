@@ -136,14 +136,16 @@ export class SyncEngine {
   }
 
   /**
-   * In Individual mode, automatically convert Spotify URLs to YouTube equivalents
-   * so users without Spotify Premium / SDK tokens can still listen.
+   * Automatically convert Spotify URLs to YouTube equivalents when the user
+   * has enabled the auto-convert preference. This allows users without
+   * Spotify Premium / SDK tokens to listen in any room mode.
    */
   private async resolvePlaybackUrl(
     url: string,
     service: MusicServiceType,
   ): Promise<{ url: string; service: MusicServiceType }> {
-    if (this.mode !== 'Individual' || service !== MusicServiceType.Spotify) {
+    const autoConvertEnabled = localStorage.getItem('spotifyAutoConvert') !== 'false';
+    if (!autoConvertEnabled || service !== MusicServiceType.Spotify) {
       return { url, service };
     }
 
@@ -278,7 +280,7 @@ export class SyncEngine {
     if (!this.room || !this.currentUser) return;
 
     const { WebRTCManager } = await import('./webrtc-manager');
-    this.webrtcManager = new WebRTCManager(this.wsClient, this.currentUser.id, false);
+    this.webrtcManager = new WebRTCManager(this.wsClient, this.currentUser.id, false, this.room.hostId);
     await this.webrtcManager.initGuest();
   }
 
@@ -471,6 +473,17 @@ export class SyncEngine {
       } else {
         this.webrtcManager?.handleICECandidate(fromUserId, candidate);
       }
+    };
+
+    this.wsClient.onRequestSDPOffer = (fromUserId) => {
+      if (!this.isHost || this.mode !== 'HostBroadcast') return;
+
+      // Guest explicitly requested an offer (late-join recovery)
+      console.log('[SyncEngine] Received RequestSDPOffer from', fromUserId, '— connecting via player preload');
+      window.electronAPI.sendPlayerSignaling({
+        type: 'connect',
+        targetUserId: fromUserId,
+      });
     };
   }
 }

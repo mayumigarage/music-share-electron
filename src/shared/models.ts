@@ -172,6 +172,11 @@ export interface ICECandidatePayload {
   candidate: RTCIceCandidateInit;
 }
 
+export interface RequestSDPOfferPayload {
+  roomId: string;
+  targetUserId: string;
+}
+
 // ============================================================================
 // Server → Client Event Payloads
 // ============================================================================
@@ -260,6 +265,10 @@ export interface ICECandidateServerPayload {
   candidate: RTCIceCandidateInit;
 }
 
+export interface RequestSDPOfferServerPayload {
+  fromUserId: string;
+}
+
 // ============================================================================
 // Socket.IO Event Interfaces
 // ============================================================================
@@ -282,6 +291,7 @@ export interface ServerToClientEvents {
   SDPOffer: (payload: SDPOfferServerPayload) => void;
   SDPAnswer: (payload: SDPAnswerServerPayload) => void;
   ICECandidate: (payload: ICECandidateServerPayload) => void;
+  RequestSDPOffer: (payload: RequestSDPOfferServerPayload) => void;
 }
 
 /** Events emitted by the client and received by the server */
@@ -301,4 +311,5 @@ export interface ClientToServerEvents {
   SDPOffer: (payload: SDPOfferPayload) => void;
   SDPAnswer: (payload: SDPAnswerPayload) => void;
   ICECandidate: (payload: ICECandidatePayload) => void;
+  RequestSDPOffer: (payload: RequestSDPOfferPayload) => void;
 }

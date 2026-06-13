@@ -996,6 +996,25 @@
     </div>
   </div>
 
+  <!-- Settings Modal (inline) -->
+  <div id="modal-overlay-settings" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:none;align-items:center;justify-content:center;">
+    <div class="modal" style="width:420px;">
+      <div class="modal-header">⚙️ 設定</div>
+      <div class="modal-body">
+        <div class="form-group" style="flex-direction:row;align-items:center;justify-content:space-between;">
+          <label style="margin:0;">SpotifyリンクをYouTubeに自動変換</label>
+          <input type="checkbox" id="setting-spotify-convert" checked style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);" />
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0;">
+          有効にすると、SpotifyのリンクがYouTubeで自動的に再生されます（Spotify Premium不要）。
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btn-settings-close">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container"></div>
 

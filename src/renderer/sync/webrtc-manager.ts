@@ -15,6 +15,9 @@ const STUN_SERVERS: RTCConfiguration = {
 
 const MAX_GUESTS = 5;
 
+const OFFER_RETRY_DELAY_MS = 8000;
+const MAX_OFFER_RETRIES = 2;
+
 export class WebRTCManager {
   private isHost: boolean;
   private localStream: MediaStream | null = null;
@@ -25,6 +28,11 @@ export class WebRTCManager {
   private hostConnection: RTCPeerConnection | null = null;
   private audioElement: HTMLAudioElement | null = null;
 
+  /** Host userId used by guest to request offers */
+  private hostUserId: string | null = null;
+  private offerRetryCount = 0;
+  private offerRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Fired when host tries to connect to a guest but MAX_GUESTS is reached */
   onGuestLimitReached: (() => void) | null = null;
 
@@ -32,8 +40,10 @@ export class WebRTCManager {
     private wsClient: WebSocketClient,
     private myUserId: string,
     host: boolean,
+    hostUserId?: string,
   ) {
     this.isHost = host;
+    this.hostUserId = hostUserId ?? null;
   }
 
   // ── Host Lifecycle ──
@@ -47,7 +57,6 @@ export class WebRTCManager {
     try {
       const source = await (window as any).electronAPI.getDesktopAudioSource();
       if (source?.id) {
-        // @ts-expect-error Electron-specific desktop capture constraints
         this.localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             mandatory: {
@@ -63,7 +72,7 @@ export class WebRTCManager {
               maxHeight: 1,
             },
           },
-        });
+        } as any);
 
         // Stop the dummy video track immediately; we only need audio.
         this.localStream.getVideoTracks().forEach((t) => t.stop());
@@ -144,7 +153,28 @@ export class WebRTCManager {
 
   async initGuest(): Promise<void> {
     if (this.isHost) return;
-    // Guest waits for SDPOffer from host via handleSDPOffer
+    this.requestOfferFromHost();
+  }
+
+  private requestOfferFromHost(): void {
+    if (!this.hostUserId) return;
+
+    console.log('[WebRTC] Requesting SDP offer from host', this.hostUserId);
+    this.wsClient.sendRequestSDPOffer(this.hostUserId);
+
+    // Schedule retry if offer doesn't arrive within timeout
+    if (this.offerRetryTimer) {
+      clearTimeout(this.offerRetryTimer);
+    }
+    if (this.offerRetryCount < MAX_OFFER_RETRIES) {
+      this.offerRetryTimer = setTimeout(() => {
+        if (!this.hostConnection || this.hostConnection.connectionState === 'failed' || this.hostConnection.connectionState === 'closed') {
+          this.offerRetryCount++;
+          console.warn(`[WebRTC] Offer retry ${this.offerRetryCount}/${MAX_OFFER_RETRIES}`);
+          this.requestOfferFromHost();
+        }
+      }, OFFER_RETRY_DELAY_MS);
+    }
   }
 
   // ── Signaling Handlers ──
@@ -153,6 +183,12 @@ export class WebRTCManager {
     if (this.isHost) {
       // Host should not receive offers (unless renegotiation)
       return;
+    }
+
+    // Clear retry timer since we received an offer
+    if (this.offerRetryTimer) {
+      clearTimeout(this.offerRetryTimer);
+      this.offerRetryTimer = null;
     }
 
     // Guest receives offer from host
@@ -166,9 +202,15 @@ export class WebRTCManager {
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      console.log('[WebRTC] Guest connection state:', state);
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         this.hostConnection = null;
         console.log('[WebRTC] Host connection closed');
+        // Auto-retry on failure if we haven't exceeded retries
+        if (state === 'failed' && this.offerRetryCount < MAX_OFFER_RETRIES) {
+          this.offerRetryCount++;
+          this.requestOfferFromHost();
+        }
       }
     };
 
@@ -229,6 +271,11 @@ export class WebRTCManager {
   // ── Cleanup ──
 
   destroy(): void {
+    if (this.offerRetryTimer) {
+      clearTimeout(this.offerRetryTimer);
+      this.offerRetryTimer = null;
+    }
+
     this.guestConnections.forEach((pc) => pc.close());
     this.guestConnections.clear();
 
