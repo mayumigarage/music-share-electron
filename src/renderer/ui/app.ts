@@ -333,9 +333,20 @@ export class AppUI {
     sortMenu?.querySelectorAll<HTMLButtonElement>('[data-sort]').forEach((item) => {
       item.addEventListener('click', () => {
         const sort = item.dataset.sort;
-        if (sort === 'title-asc' || sort === 'title-desc' || sort === 'duration-asc' || sort === 'duration-desc') {
+        if (
+          sort === 'title-asc' ||
+          sort === 'title-desc' ||
+          sort === 'duration-asc' ||
+          sort === 'duration-desc' ||
+          sort === 'member-round-robin'
+        ) {
           this.queuePanel.sortQueue(sort);
-          this.showToast('共有キューの並び順を更新しました', 'success');
+          this.showToast(
+            sort === 'member-round-robin'
+              ? 'メンバーごとに1曲ずつ再生される順番に更新しました'
+              : '共有キューの並び順を更新しました',
+            'success',
+          );
         }
         sortMenu?.classList.remove('open');
         sortButton?.setAttribute('aria-expanded', 'false');

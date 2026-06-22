@@ -90,7 +90,32 @@ export class QueuePanel {
     this.trackUrlInput.focus();
   }
 
-  sortQueue(sort: 'title-asc' | 'title-desc' | 'duration-asc' | 'duration-desc'): void {
+  sortQueue(sort: 'title-asc' | 'title-desc' | 'duration-asc' | 'duration-desc' | 'member-round-robin'): void {
+    if (sort === 'member-round-robin') {
+      const tracksByMember = new Map<string, Track[]>();
+      for (const track of this.queue) {
+        const memberTracks = tracksByMember.get(track.addedBy) ?? [];
+        memberTracks.push(track);
+        tracksByMember.set(track.addedBy, memberTracks);
+      }
+
+      const roundRobin: Track[] = [];
+      let addedTrack = true;
+      for (let trackIndex = 0; addedTrack; trackIndex += 1) {
+        addedTrack = false;
+        for (const memberTracks of tracksByMember.values()) {
+          const track = memberTracks[trackIndex];
+          if (track) {
+            roundRobin.push(track);
+            addedTrack = true;
+          }
+        }
+      }
+
+      this.wsClient.reorderQueue(roundRobin.map((track) => track.id));
+      return;
+    }
+
     const direction = sort.endsWith('desc') ? -1 : 1;
     const byDuration = sort.startsWith('duration');
     const sorted = [...this.queue].sort((a, b) => {
