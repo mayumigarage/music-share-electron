@@ -22,11 +22,11 @@ export class SyncEngine {
   /** Fired when the host player reports its local playback state. */
   onHostPlayerStateObserved: ((state: PlayerState) => void) | null = null;
 
-  // Skip throttling state to prevent rapid auto-skip loops
-  private skipCooldown = false;
-  private skippedCurrentTrack = false;
-  private currentTrackErrorCount = 0;
   private lastEndedAt = 0;
+
+  // Deduplicate rapid duplicate player-error emissions
+  private lastPlayerError = '';
+  private lastPlayerErrorAt = 0;
 
   constructor(
     private wsClient: WebSocketClient,
@@ -194,34 +194,6 @@ export class SyncEngine {
     }
   }
 
-  // ── Error Classification ──
-
-  /** Classify a player error string into RECOVERABLE / FATAL / TRANSIENT. */
-  private classifyError(error: string): 'RECOVERABLE' | 'FATAL' | 'TRANSIENT' {
-    const lower = error.toLowerCase();
-    // Recoverable: device/auth issues that the player side retries
-    if (
-      lower.includes('auth_required') ||
-      lower.includes('no_device') ||
-      lower.includes('401') ||
-      lower.includes('404') ||
-      lower.includes('retrying') ||
-      lower.includes('no active')
-    ) {
-      return 'RECOVERABLE';
-    }
-    // Fatal: premium restrictions, account bans
-    if (
-      lower.startsWith('account|') ||
-      lower.includes('premium') ||
-      lower.includes('403')
-    ) {
-      return 'FATAL';
-    }
-    // Everything else is treated as transient (may resolve with a skip)
-    return 'TRANSIENT';
-  }
-
   // ── Player Message Binding ──
 
   private bindPlayerMessages(): void {
@@ -230,12 +202,6 @@ export class SyncEngine {
         case 'playing':
         case 'paused':
         case 'state': {
-          // Reset skip tracking when playback successfully starts on a new track
-          if (msg.type === 'playing') {
-            this.skippedCurrentTrack = false;
-            this.currentTrackErrorCount = 0;
-          }
-
           const isPlaying = msg.type === 'playing' || (msg.type === 'state' && msg.isPlaying);
           const position = msg.type === 'state' ? msg.currentTime : (this.lastBroadcastState?.positionSeconds ?? 0);
           const duration = msg.type === 'state' ? msg.duration : (this.lastBroadcastState?.currentTrack?.durationSeconds ?? null);
@@ -319,8 +285,16 @@ export class SyncEngine {
         }
         case 'error': {
           const errorDetail = String(msg.error);
-          const category = this.classifyError(errorDetail);
-          console.error('[PlayerProxy] Player error (' + category + '):', errorDetail);
+
+          // Deduplicate: ignore the same error within 2 seconds
+          const now = Date.now();
+          if (errorDetail === this.lastPlayerError && now - this.lastPlayerErrorAt < 2000) {
+            return;
+          }
+          this.lastPlayerError = errorDetail;
+          this.lastPlayerErrorAt = now;
+
+          console.error('[PlayerProxy] Player error:', errorDetail);
 
           // Always surface the error to UI
           this.onPlayerError?.(errorDetail);
@@ -330,36 +304,6 @@ export class SyncEngine {
             this.lastBroadcastState.isPlaying = false;
           }
 
-          // RECOVERABLE errors are retried by the player side; don't skip here.
-          if (category === 'RECOVERABLE') {
-            this.currentTrackErrorCount++;
-            return;
-          }
-
-          // FATAL errors (Premium required, account issues) should not auto-skip;
-          // let the user resolve the issue.
-          if (category === 'FATAL') {
-            return;
-          }
-
-          // TRANSIENT errors: auto-skip at most once per track, with cooldown.
-          if (this.isHost && this.room?.playerState.currentTrack) {
-            if (this.skipCooldown || this.skippedCurrentTrack) {
-              console.log('[SyncEngine] Skip suppressed due to cooldown or already skipped.');
-              return;
-            }
-            const trackId = this.room.playerState.currentTrack.id;
-            this.skippedCurrentTrack = true;
-            this.skipCooldown = true;
-            setTimeout(() => {
-              this.skipCooldown = false;
-            }, 3000);
-            setTimeout(() => {
-              if (this.room?.playerState.currentTrack?.id === trackId) {
-                this.wsClient.trackFinished(trackId);
-              }
-            }, 500);
-          }
           break;
         }
       }

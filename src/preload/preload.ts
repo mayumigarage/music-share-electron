@@ -9,8 +9,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   ElectronAPI,
-  PlayerCommand,
-  PlayerMessage,
   TrackResolverDebugLog,
   TrackSearchResult,
   YouTubeMusicCandidatesResult,
@@ -19,30 +17,6 @@ import type {
 const api: ElectronAPI = {
   setSidebarVisibility: (leftVisible, rightVisible) => {
     return ipcRenderer.invoke('set-sidebar-visibility', leftVisible, rightVisible) as Promise<void>;
-  },
-
-  /**
-   * Subscribe to player messages relayed from the WebContentsView.
-   * Returns an unsubscribe function.
-   */
-  onPlayerMessage: (callback) => {
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      message: PlayerMessage,
-    ) => {
-      callback(message);
-    };
-    ipcRenderer.on('player-message', handler);
-    return () => {
-      ipcRenderer.removeListener('player-message', handler);
-    };
-  },
-
-  /**
-   * Send a command to the player running inside the WebContentsView.
-   */
-  sendToPlayer: (command: PlayerCommand) => {
-    ipcRenderer.invoke('send-to-player', command);
   },
 
   /**

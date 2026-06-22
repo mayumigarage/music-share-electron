@@ -1,69 +1,31 @@
 /**
  * MusicShare — Player Proxy
- * Phase 6: Abstraction layer for player operations (Renderer → Preload → Main → WebContentsView).
+ * Phase 6: Abstraction layer for the DOM-hosted YouTube player.
  */
+import { DomYouTubePlayer } from './dom-youtube-player.js';
+import type { PlayerMessage } from '../../shared/preload-api.js';
 
 export class PlayerProxy {
+  private player = new DomYouTubePlayer();
+
   loadTrack(resolvedVideoId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let resolved = false;
-      const unsub = this.onMessage((msg) => {
-        if (msg.type === 'loaded') {
-          if (!resolved) {
-            resolved = true;
-            unsub();
-            clearTimeout(timer);
-            resolve();
-          }
-        }
-        if (msg.type === 'error') {
-          if (!resolved) {
-            resolved = true;
-            unsub();
-            clearTimeout(timer);
-            reject(new Error(msg.error));
-          }
-        }
-      });
-
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          unsub();
-          reject(new Error('loadTrack timed out after 30s'));
-        }
-      }, 30000);
-
-      window.electronAPI.sendToPlayer({ type: 'loadTrack', resolvedVideoId });
-    });
+    return this.player.loadTrack(resolvedVideoId);
   }
 
-  play(): void {
-    window.electronAPI.sendToPlayer({ type: 'play' });
-  }
+  play(): void { this.player.play(); }
 
-  pause(): void {
-    window.electronAPI.sendToPlayer({ type: 'pause' });
-  }
+  pause(): void { this.player.pause(); }
 
-  resume(): void {
-    window.electronAPI.sendToPlayer({ type: 'play' });
-  }
+  resume(): void { this.player.play(); }
 
-  stop(): void {
-    window.electronAPI.sendToPlayer({ type: 'stop' });
-  }
+  stop(): void { this.player.stop(); }
 
-  seek(positionSeconds: number): void {
-    window.electronAPI.sendToPlayer({ type: 'seek', positionSeconds });
-  }
+  seek(positionSeconds: number): void { this.player.seek(positionSeconds); }
 
-  setVolume(volume: number): void {
-    window.electronAPI.sendToPlayer({ type: 'setVolume', volume });
-  }
+  setVolume(volume: number): void { this.player.setVolume(volume); }
 
-  onMessage(callback: (message: import('../../shared/preload-api').PlayerMessage) => void): () => void {
-    return window.electronAPI.onPlayerMessage(callback);
+  onMessage(callback: (message: PlayerMessage) => void): () => void {
+    return this.player.onMessage(callback);
   }
 
 }

@@ -11,7 +11,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import { initializeCrashHandler } from './crash-handler';
 import { WindowManager } from './window-manager';
-import { startPlayerServer, stopPlayerServer } from './player-server';
+import { startRendererServer, stopRendererServer } from './renderer-server';
 import { SpotifyAuthManager } from './spotify-auth';
 
 // Allow media playback without user gesture (required for programmatic
@@ -27,7 +27,7 @@ app.commandLine.appendSwitch('enable-widevine-cdm');
 initializeCrashHandler();
 
 let windowManager: WindowManager | null = null;
-let playerServerUrl: string | null = null;
+let rendererServerUrl: string | null = null;
 const spotifyAuthManager = new SpotifyAuthManager();
 
 // Register custom protocol handler for OAuth callbacks.
@@ -79,16 +79,16 @@ if (!gotTheLock) {
   app.on('widevine-ready', async (_event, widevineVersion) => {
     console.log(`[Main] Widevine ready (version ${widevineVersion})`);
     await spotifyAuthManager.initialize();
-    playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
-    windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
+    rendererServerUrl = await startRendererServer();
+    windowManager = new WindowManager(rendererServerUrl, spotifyAuthManager);
   });
 
   app.on('widevine-error', async (_event, error) => {
     console.error('[Main] Widevine failed to initialise:', error);
     if (!windowManager) {
       await spotifyAuthManager.initialize();
-      playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
-      windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
+      rendererServerUrl = await startRendererServer();
+      windowManager = new WindowManager(rendererServerUrl, spotifyAuthManager);
     }
   });
 
@@ -98,13 +98,13 @@ if (!gotTheLock) {
     if (!windowManager) {
       console.warn('[Main] widevine-ready/widevine-error did not fire; falling back to app.whenReady()');
       await spotifyAuthManager.initialize();
-      playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
-      windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
+      rendererServerUrl = await startRendererServer();
+      windowManager = new WindowManager(rendererServerUrl, spotifyAuthManager);
     }
   });
 
   app.on('window-all-closed', () => {
-    stopPlayerServer();
+    stopRendererServer();
     // On macOS it is common for applications to stay open until the user
     // explicitly quits with Cmd+Q.
     if (process.platform !== 'darwin') {
@@ -115,8 +115,8 @@ if (!gotTheLock) {
   app.on('activate', () => {
     // On macOS re-create a window when the dock icon is clicked and no
     // windows are open.
-    if (windowManager === null && playerServerUrl) {
-      windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
+    if (windowManager === null && rendererServerUrl) {
+      windowManager = new WindowManager(rendererServerUrl, spotifyAuthManager);
     } else if (windowManager && !windowManager.getWindow().isVisible()) {
       windowManager.getWindow().show();
     }

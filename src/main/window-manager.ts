@@ -15,13 +15,11 @@ import {
   dialog,
 } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
-import { PlayerBridge } from './player-bridge';
 import { LayoutManager } from './layout-manager';
 import { resolveTrack } from './track-resolver';
 import { appendCrashLog } from './crash-handler';
 import { SpotifyAuthManager } from './spotify-auth';
-import type { PlayerCommand, PlayerMessage, TrackResolverDebugLog } from '../shared/preload-api';
+import type { TrackResolverDebugLog } from '../shared/preload-api';
 
 const WINDOW_WIDTH = 1200;
 const WINDOW_HEIGHT = 700;
@@ -30,22 +28,20 @@ const BACKGROUND_COLOR = '#121212';
 export class WindowManager {
   private win!: BaseWindow;
   private mainView!: WebContentsView;
-  private playerBridge!: PlayerBridge;
   private layoutManager!: LayoutManager;
   private tray!: Tray;
-  private playerServerUrl: string;
+  private rendererServerUrl: string;
   private spotifyAuthManager: SpotifyAuthManager;
   private pendingAuthDeferred: {
     resolve: (value: { success: boolean; error?: string }) => void;
     timer: NodeJS.Timeout;
   } | null = null;
 
-  constructor(playerServerUrl: string, spotifyAuthManager: SpotifyAuthManager) {
-    this.playerServerUrl = playerServerUrl;
+  constructor(rendererServerUrl: string, spotifyAuthManager: SpotifyAuthManager) {
+    this.rendererServerUrl = rendererServerUrl;
     this.spotifyAuthManager = spotifyAuthManager;
     this.createBaseWindow();
     this.createMainView();
-    this.createPlayerView();
     this.createTray();
     this.registerIpcHandlers();
     this.setupLayout();
@@ -81,21 +77,25 @@ export class WindowManager {
       },
     });
 
-    // Use __dirname (dist/main/main/) to reliably reach dist/renderer/index.html
-    // in both development and packaged builds.
-    const rendererPath = path.join(__dirname, '../../renderer/index.html');
-
-    if (fs.existsSync(rendererPath)) {
-      this.mainView.webContents.loadFile(rendererPath);
-      this.mainView.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-        const prefix = ['verbose', 'info', 'warning', 'error'][level] ?? 'log';
-        console.log(`[RendererConsole][${prefix}] ${sourceId}:${line} ${message}`);
-      });
-    } else {
-      // No renderer HTML yet. Load a blank dark page.
-      console.warn('[Main] Renderer HTML not found at', rendererPath, '— falling back to blank page');
-      this.mainView.webContents.loadURL('data:text/html,<html style="background:%23121212"></html>');
-    }
+    const rendererOrigin = new URL(this.rendererServerUrl).origin;
+    // YouTube requires a browser client identity. Avoid exposing Electron's
+    // product token while retaining Chromium's normal user agent.
+    this.mainView.webContents.setUserAgent(
+      app.userAgentFallback.replace(/\sElectron\/[^\s]+/i, ''),
+    );
+    this.mainView.webContents.session.webRequest.onBeforeSendHeaders(
+      { urls: ['https://*.youtube.com/*', 'https://youtube.com/*'] },
+      (details, callback) => {
+        const headers = details.requestHeaders;
+        if (!headers.Referer && !headers.referer) headers.Referer = `${rendererOrigin}/`;
+        callback({ requestHeaders: headers });
+      },
+    );
+    this.mainView.webContents.loadURL(`${this.rendererServerUrl}/index.html`);
+    this.mainView.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      const prefix = ['verbose', 'info', 'warning', 'error'][level] ?? 'log';
+      console.log(`[RendererConsole][${prefix}] ${sourceId}:${line} ${message}`);
+    });
 
     this.mainView.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
       console.error('[Main] did-fail-load:', errorCode, errorDescription, validatedURL);
@@ -128,24 +128,10 @@ export class WindowManager {
     Menu.setApplicationMenu(null);
   }
 
-  private createPlayerView(): void {
-    // This single bridge always hosts YouTubePlayer.html for the app lifetime.
-    this.playerBridge = new PlayerBridge(this.win.contentView, this.playerServerUrl);
-
-    // Relay player messages to the main renderer view.
-    this.playerBridge.onPlayerMessage((msg: PlayerMessage) => {
-      if (!this.mainView.webContents.isDestroyed()) {
-        this.mainView.webContents.send('player-message', msg);
-      }
-    });
-
-  }
-
   private setupLayout(): void {
     this.layoutManager = new LayoutManager(
       this.win,
       this.mainView,
-      this.playerBridge.getWebContentsView(),
     );
   }
 
@@ -212,15 +198,6 @@ export class WindowManager {
           this.mainView.webContents.send('youtube-music-candidates', result);
         }
       });
-    });
-
-    ipcMain.handle('send-to-player', async (_, command: PlayerCommand) => {
-      // Playback-related commands need an initialized player; pause/stop are safe to fire regardless.
-      const needsReady = ['loadTrack', 'play', 'resume', 'seek', 'setVolume'].includes(command.type);
-      if (needsReady) {
-        await this.playerBridge.whenReady();
-      }
-      await this.playerBridge.sendCommand(command);
     });
 
     // Phase 8.1: Receive crash reports from renderer and append to crash.log
@@ -314,12 +291,10 @@ export class WindowManager {
 
   private destroy(): void {
     this.layoutManager?.destroy();
-    this.playerBridge?.dispose();
     this.tray?.destroy();
     ipcMain.removeHandler('open-external');
     ipcMain.removeHandler('set-sidebar-visibility');
     ipcMain.removeHandler('resolve-track');
-    ipcMain.removeHandler('send-to-player');
     ipcMain.removeHandler('report-crash');
     ipcMain.removeHandler('show-error-dialog');
     ipcMain.removeHandler('start-spotify-auth');

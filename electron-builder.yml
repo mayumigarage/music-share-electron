@@ -5,9 +5,6 @@ directories:
 files:
   - dist/main/**/*
   - dist/renderer/**/*
-  - src/renderer/index.html
-extraResources:
-  - assets/players/**
 
 # CastLabs 製 Electron フォークのバイナリを直接使用（公式ミラーには存在しないバージョンのため）
 electronDist: ./node_modules/electron/dist

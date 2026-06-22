@@ -11,7 +11,6 @@ import { QueuePanel } from './queue-panel.js';
 import { HistoryPanel } from './history-panel.js';
 import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
-import { SettingsModal } from './settings-modal.js';
 import { FavoritesStore } from './favorites-store.js';
 import { RoomMode } from '../../shared/models.js';
 import type {
@@ -31,7 +30,6 @@ export class AppUI {
   private historyPanel: HistoryPanel;
   private membersPanel: MembersPanel;
   private playerControl: PlayerControl;
-  private settingsModal: SettingsModal;
   private favoritesStore = new FavoritesStore();
 
   private currentRoom: Room | null = null;
@@ -75,7 +73,6 @@ export class AppUI {
     this.historyPanel = new HistoryPanel();
     this.membersPanel = new MembersPanel();
     this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine);
-    this.settingsModal = new SettingsModal();
   }
 
   async init(): Promise<void> {
@@ -123,7 +120,6 @@ export class AppUI {
     this.historyPanel.init();
     this.membersPanel.init();
     this.playerControl.init();
-    this.settingsModal.init();
     this.renderFavoritePlaylist();
 
     this.wsClient.onRoomCreated = (room, user) => this.handleRoomJoined(room, user);
@@ -156,11 +152,10 @@ export class AppUI {
       this.showToast(message, 'error');
     };
 
-    // Player error (e.g. YT 153, Spotify playback failure). Skip/retry policy
-    // is centralized in SyncEngine so it can use the authoritative track state.
+    // Player errors are shown to the user; they never change the queue automatically.
     this.syncEngine.onPlayerError = (errorDetail) => {
       console.error('[AppUI] Player error detail:', errorDetail);
-      const friendlyMessage = this.resolveSpotifyErrorMessage(errorDetail);
+      const friendlyMessage = this.resolvePlayerErrorMessage(errorDetail);
       this.showToast(friendlyMessage || '再生中にエラーが発生しました。', 'error');
     };
 
@@ -199,17 +194,6 @@ export class AppUI {
       } else {
         this.isSpotifyAuthenticated = false;
         this.updateSpotifyAuthUI();
-      }
-    });
-
-    // Listen for player auth_required errors
-    window.electronAPI.onPlayerMessage((message) => {
-      if (message.type === 'error' && message.error?.startsWith('auth_required')) {
-        // Reset auth state so the login button reappears
-        this.isSpotifyAuthenticated = false;
-        this.showSpotifyAuthRequested = true;
-        this.updateSpotifyAuthUI();
-        this.showToast('Spotify セッションが無効です。再ログインしてください。', 'error');
       }
     });
 
@@ -254,9 +238,23 @@ export class AppUI {
     }
   }
 
-  /** Translate low-level Spotify error strings into user-friendly messages. */
-  private resolveSpotifyErrorMessage(errorDetail: string): string | null {
+  /** Translate low-level player error strings into user-friendly messages. */
+  private resolvePlayerErrorMessage(errorDetail: string): string | null {
     const lower = errorDetail.toLowerCase();
+    // YouTube IFrame Player errors
+    if (lower.includes('youtube player error: 153')) {
+      return 'YouTube が埋め込みプレイヤーを識別できませんでした。もう一度再生してください。';
+    }
+    if (lower.includes('youtube player error: 150') || lower.includes('youtube player error: 151')) {
+      return 'この動画は埋め込み再生に対応していません。';
+    }
+    if (lower.includes('youtube player error: 100')) {
+      return '動画が見つからないか、削除されています。';
+    }
+    if (lower.includes('youtube player error: 5')) {
+      return 'HTML5 プレイヤーでこの動画を再生できません。';
+    }
+    // Spotify errors
     if (lower.includes('premium')) {
       return 'Spotify Premium が必要です。無料アカウントでは再生できません。';
     }
@@ -304,11 +302,6 @@ export class AppUI {
   }
 
   private bindTopBar(): void {
-    const settingsBtn = document.getElementById('btn-settings');
-    settingsBtn?.addEventListener('click', () => {
-      this.settingsModal.open();
-    });
-
     document.querySelectorAll<HTMLButtonElement>('.workspace-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
         const workspace = tab.dataset.workspace;

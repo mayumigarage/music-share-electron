@@ -18,19 +18,7 @@ import type { MusicServiceType } from './models';
 // Player Message Types
 // ============================================================================
 
-/** Commands that can be sent to the player */
-export type PlayerCommand =
-  | { type: 'play' }
-  | { type: 'pause' }
-  | { type: 'stop' }
-  | { type: 'seek'; positionSeconds: number }
-  | { type: 'setVolume'; volume: number }
-  | { type: 'loadTrack'; resolvedVideoId: string }
-  | { type: 'getDuration' }
-  | { type: 'getCurrentTime' }
-  | { type: 'getState' };
-
-/** Messages received from the player */
+/** Messages emitted by the DOM-hosted player. */
 export type PlayerMessage =
   | { type: 'ready' }
   | { type: 'playing' }
@@ -133,24 +121,8 @@ export interface TrackResolverDebugLog {
  *   window.electronAPI.openExternal('https://example.com');
  */
 export interface ElectronAPI {
-  /**
-   * Update the visible side panels and keep the player WebContentsView bounds
-   * aligned with the renderer layout.
-   */
+  /** Update side-panel state in the main process. */
   setSidebarVisibility: (leftVisible: boolean, rightVisible: boolean) => Promise<void>;
-
-  /**
-   * Subscribe to messages from the player (WebContentsView).
-   * @param callback - Function to handle player messages
-   * @returns Unsubscribe function
-   */
-  onPlayerMessage: (callback: (message: PlayerMessage) => void) => () => void;
-
-  /**
-   * Send a command to the player (WebContentsView).
-   * @param command - The command to send
-   */
-  sendToPlayer: (command: PlayerCommand) => void;
 
   /**
    * Open a URL in the default system browser.
@@ -220,20 +192,6 @@ export interface ElectronAPI {
 }
 
 // ============================================================================
-// Player Preload API Interface (for player WebContentsView)
-// ============================================================================
-
-/**
- * API exposed inside player HTML via player-preload.ts.
- * Player wrappers use this to send messages back to Main.
- */
-export interface PlayerPreloadAPI {
-  sendMessage: (msg: unknown) => void;
-  getSpotifyToken: () => Promise<string | null>;
-  onSpotifyToken: (callback: (token: string | null) => void) => () => void;
-}
-
-// ============================================================================
 // Window Interface Extension
 // ============================================================================
 
@@ -244,7 +202,6 @@ export interface PlayerPreloadAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
-    electronPlayerAPI: PlayerPreloadAPI;
   }
 }
 

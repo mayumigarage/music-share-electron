@@ -7,12 +7,14 @@ import { AppUI } from './ui/app.js';
 import { WebSocketClient } from './sync/websocket-client.js';
 import { SyncEngine } from './sync/sync-engine.js';
 import { PlayerProxy } from './sync/player-proxy.js';
+import { initializeSidebarResizers } from './ui/sidebar-resizer.js';
 
 async function main(): Promise<void> {
   console.log('[Renderer] main() started');
   let app: AppUI | null = null;
 
   try {
+    initializeSidebarResizers();
     const wsClient = new WebSocketClient();
     const playerProxy = new PlayerProxy();
     const syncEngine = new SyncEngine(wsClient, playerProxy);
