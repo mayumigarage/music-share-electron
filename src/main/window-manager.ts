@@ -193,7 +193,7 @@ export class WindowManager {
         if (!this.mainView.webContents.isDestroyed()) {
           this.mainView.webContents.send('track-resolver-debug', log);
         }
-      }, () => this.spotifyAuthManager.getValidAccessToken(), { searchQuery }, (result) => {
+      }, { searchQuery }, (result) => {
         if (!this.mainView.webContents.isDestroyed()) {
           this.mainView.webContents.send('youtube-music-candidates', result);
         }

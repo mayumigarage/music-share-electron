@@ -34,7 +34,11 @@ const SCOPES = [
   'user-read-playback-state',
 ];
 
-/** Client ID is read from environment or falls back to a placeholder. */
+/**
+ * Spotify public client ID.  It is deliberately compiled into the main
+ * process bundle so packaged builds do not depend on a developer shell's
+ * environment variables.
+ */
 const CLIENT_ID = '89117343229b4ba5935320d2fb41673d';
 
 // ---------------------------------------------------------------------------
@@ -130,7 +134,7 @@ export class SpotifyAuthManager {
   startAuth(): { authUrl: string } {
     if (!CLIENT_ID) {
       throw new Error(
-        'SPOTIFY_CLIENT_ID is not set. Set the environment variable before starting auth.',
+        'Spotify Client ID is not configured.',
       );
     }
 

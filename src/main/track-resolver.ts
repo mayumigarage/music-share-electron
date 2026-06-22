@@ -6,8 +6,11 @@
 
 import * as https from 'https';
 import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { URL } from 'url';
 import { promisify } from 'util';
+import { app } from 'electron';
 import { appendAppLog } from './crash-handler';
 import type {
   TrackResolutionResult,
@@ -22,6 +25,21 @@ import type {
 import { MusicServiceType } from '../shared/models';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Packaged Windows builds carry their own yt-dlp binary so recipients do not
+ * need to install it or configure PATH. Development keeps using PATH, which
+ * makes local updates and debugging straightforward.
+ */
+function getYtDlpCommand(): string {
+  if (!app.isPackaged) return 'yt-dlp';
+
+  const bundledBinary = path.join(process.resourcesPath, 'tools', 'yt-dlp.exe');
+  if (!fs.existsSync(bundledBinary)) {
+    throw new Error(`Bundled yt-dlp was not found: ${bundledBinary}`);
+  }
+  return bundledBinary;
+}
 const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 const MAX_CANDIDATES_PER_SERVICE = 6;
 const RESOLUTION_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -36,8 +54,13 @@ type YtDlpError = Error & {
 };
 
 type TrackResolverDebugLogger = (log: TrackResolverDebugLog) => void;
-type SpotifyAccessTokenProvider = () => Promise<string | null>;
 type YouTubeMusicCandidatesListener = (result: YouTubeMusicCandidatesResult) => void;
+
+// Public metadata is resolved by the MusicShare server with its own Spotify
+// Client Credentials token. This keeps the client secret out of distributed
+// Electron applications and does not require guests to sign in to Spotify.
+const MUSIC_SHARE_SERVER_URL = process.env.MUSIC_SHARE_SERVER_URL
+  || 'https://music-share-electron-server.onrender.com';
 
 interface CacheEntry<T> {
   expiresAt: number;
@@ -47,13 +70,6 @@ interface CacheEntry<T> {
 
 const metadataCache = new Map<string, CacheEntry<ResolvedTrack>>();
 const candidateCache = new Map<string, CacheEntry<TrackSearchCandidate[]>>();
-
-interface SpotifyApiTrack {
-  name?: string;
-  artists?: Array<{ name?: string }>;
-  album?: { images?: Array<{ url?: string }> };
-  duration_ms?: number;
-}
 
 interface YouTubeMetadata {
   id: string;
@@ -257,7 +273,7 @@ function parseSearchIds(output: string): string[] {
 
 async function fetchYouTubeMetadata(videoId: string): Promise<YouTubeMetadata | null> {
   const { stdout } = await execFileAsync(
-    'yt-dlp',
+    getYtDlpCommand(),
     [
       '--encoding', 'utf-8', '--no-playlist', '--no-warnings', '--skip-download',
       '--print', '%(id)s\t%(title)s\t%(uploader)s\t%(thumbnail)s\t%(duration)s',
@@ -304,7 +320,7 @@ async function findYouTubeCandidate(
       stage: 'yt-dlp-command', sourceUrl: url, candidateType, searchQuery, ytDlpArgs: searchArgs,
     });
     const { stdout: searchOutput } = await execFileAsync(
-      'yt-dlp', searchArgs,
+      getYtDlpCommand(), searchArgs,
       { timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 },
     );
     const videoIds = parseSearchIds(searchOutput).slice(0, 12);
@@ -401,10 +417,16 @@ function extractSpotifyTrackId(url: string): string | null {
   }
 }
 
-/** Resolve Spotify metadata from the authenticated Spotify Web API. */
+interface SpotifyCatalogMetadata {
+  title?: unknown;
+  artist?: unknown;
+  thumbnailUrl?: unknown;
+  durationSeconds?: unknown;
+}
+
+/** Resolve Spotify metadata through the server's Client Credentials token. */
 async function resolveSpotify(
   url: string,
-  getAccessToken: SpotifyAccessTokenProvider | undefined,
   debugLog?: TrackResolverDebugLogger,
 ): Promise<TrackResolutionResult> {
   const trackId = extractSpotifyTrackId(url);
@@ -416,54 +438,31 @@ async function resolveSpotify(
     return { error: 'Spotify のトラック URL を認識できませんでした。', url };
   }
 
-  const accessToken = await getAccessToken?.();
-  if (!accessToken) {
-    debugLog?.({
-      stage: 'spotify-web-api', sourceUrl: url,
-      details: { trackId, error: 'No authenticated Spotify access token' },
-    });
-    return { error: 'Spotify の曲情報を取得するには Spotify にログインしてください。', url };
-  }
-
-  const apiUrl = `https://api.spotify.com/v1/tracks/${trackId}`;
+  const apiUrl = `${MUSIC_SHARE_SERVER_URL}/api/spotify/tracks/${trackId}`;
   try {
-    const { statusCode, body } = await makeRequest(apiUrl, {
-      Authorization: `Bearer ${accessToken}`,
-    });
+    const { statusCode, body } = await makeRequest(apiUrl);
     if (statusCode < 200 || statusCode >= 300) {
-      let spotifyError: string | null = null;
-      try {
-        const errorBody = JSON.parse(body) as { error?: { message?: string } };
-        spotifyError = errorBody.error?.message || null;
-      } catch {
-        // The status code is still useful when Spotify returns a non-JSON error.
-      }
       debugLog?.({
         stage: 'spotify-web-api', sourceUrl: url,
-        details: { trackId, statusCode, error: spotifyError || 'Spotify Web API request failed' },
+        details: { trackId, statusCode, error: 'MusicShare Spotify catalog request failed' },
       });
-      return {
-        error: statusCode === 401
-          ? 'Spotify の認証が無効です。再ログインしてください。'
-          : `Spotify API から曲情報を取得できませんでした（HTTP ${statusCode}）。`,
-        url,
-      };
+      return { error: 'Spotify の曲情報を取得できませんでした。しばらくしてから再試行してください。', url };
     }
 
-    const data = JSON.parse(body) as SpotifyApiTrack;
-    const title = data.name?.trim() || 'Unknown Track';
-    const artist = data.artists
-      ?.map(({ name }) => name?.trim())
-      .filter((name): name is string => Boolean(name))
-      .join(', ') || 'Unknown Artist';
-    const thumbnailUrl = data.album?.images?.find(({ url: imageUrl }) => Boolean(imageUrl))?.url || '';
-    const durationSeconds = Number.isFinite(data.duration_ms)
-      ? Math.round(data.duration_ms! / 1000)
-      : null;
+    const data = JSON.parse(body) as SpotifyCatalogMetadata;
+    if (typeof data.title !== 'string' || typeof data.artist !== 'string'
+      || typeof data.thumbnailUrl !== 'string'
+      || (data.durationSeconds !== null && typeof data.durationSeconds !== 'number')) {
+      throw new Error('MusicShare server returned invalid Spotify metadata');
+    }
+    const title = data.title.trim() || 'Unknown Track';
+    const artist = data.artist.trim() || 'Unknown Artist';
+    const thumbnailUrl = data.thumbnailUrl;
+    const durationSeconds = data.durationSeconds;
 
     debugLog?.({
       stage: 'spotify-web-api', sourceUrl: url, title, artist,
-      details: { trackId, statusCode, artistCount: data.artists?.length || 0, hasThumbnail: Boolean(thumbnailUrl) },
+      details: { trackId, statusCode, hasThumbnail: Boolean(thumbnailUrl) },
     });
     return {
       id: generateId(), url, resolvedVideoId: null, title, artist, thumbnailUrl,
@@ -533,7 +532,6 @@ async function resolveAppleMusic(url: string): Promise<TrackResolutionResult> {
 export async function resolveTrack(
   url: string,
   debugLog?: TrackResolverDebugLogger,
-  getSpotifyAccessToken?: SpotifyAccessTokenProvider,
   options?: TrackResolveOptions,
   onYouTubeMusicCandidates?: YouTubeMusicCandidatesListener,
 ): Promise<TrackSearchResult> {
@@ -558,7 +556,7 @@ export async function resolveTrack(
       case MusicServiceType.YouTube:
         return await resolveYouTube(url);
       case MusicServiceType.Spotify:
-        return await resolveSpotify(url, getSpotifyAccessToken, debugLog);
+        return await resolveSpotify(url, debugLog);
       case MusicServiceType.AppleMusic:
         return await resolveAppleMusic(url);
       default:

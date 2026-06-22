@@ -5,6 +5,9 @@ directories:
 files:
   - dist/main/**/*
   - dist/renderer/**/*
+extraResources:
+  - from: tools/yt-dlp.exe
+    to: tools/yt-dlp.exe
 
 # CastLabs 製 Electron フォークのバイナリを直接使用（公式ミラーには存在しないバージョンのため）
 electronDist: ./node_modules/electron/dist
@@ -12,6 +15,14 @@ electronDist: ./node_modules/electron/dist
 # バージョン文字列に "+wvcus" が含まれるため、winCodeSign/rcedit のダウンロードが失敗するのを回避
 win:
   signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
 
 mac:
   target:
