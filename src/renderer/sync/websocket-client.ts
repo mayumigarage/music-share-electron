@@ -32,11 +32,6 @@ export class WebSocketClient {
   onHistoryUpdated: ((history: TrackHistory[]) => void) | null = null;
   onError: ((code: string, message: string) => void) | null = null;
 
-  // WebRTC signaling callbacks
-  onSDPOffer: ((fromUserId: string, sdp: RTCSessionDescriptionInit) => void) | null = null;
-  onSDPAnswer: ((fromUserId: string, sdp: RTCSessionDescriptionInit) => void) | null = null;
-  onICECandidate: ((fromUserId: string, candidate: RTCIceCandidateInit) => void) | null = null;
-  onRequestSDPOffer: ((fromUserId: string) => void) | null = null;
 
   constructor() {
     this.connect();
@@ -80,8 +75,11 @@ export class WebSocketClient {
     });
 
     this.socket.on('RoomLeft', () => {
+      const wasInRoom = this.currentRoomId !== null;
       this.currentRoomId = null;
-      this.onRoomLeft?.();
+      if (wasInRoom) {
+        this.onRoomLeft?.();
+      }
     });
 
     this.socket.on('UserJoined', ({ user }) => {
@@ -125,22 +123,6 @@ export class WebSocketClient {
       // Host receives this
     });
 
-    // WebRTC signaling
-    this.socket.on('SDPOffer', ({ fromUserId, sdp }) => {
-      this.onSDPOffer?.(fromUserId, sdp);
-    });
-
-    this.socket.on('SDPAnswer', ({ fromUserId, sdp }) => {
-      this.onSDPAnswer?.(fromUserId, sdp);
-    });
-
-    this.socket.on('ICECandidate', ({ fromUserId, candidate }) => {
-      this.onICECandidate?.(fromUserId, candidate);
-    });
-
-    this.socket.on('RequestSDPOffer', ({ fromUserId }) => {
-      this.onRequestSDPOffer?.(fromUserId);
-    });
   }
 
   // ── Client → Server emitters ──
@@ -157,6 +139,9 @@ export class WebSocketClient {
     if (this.currentRoomId) {
       this.socket?.emit('LeaveRoom', { roomId: this.currentRoomId });
       this.currentRoomId = null;
+      // Return to the room entry UI immediately. The server notification is
+      // still handled above for other clients, but must not reset this client twice.
+      this.onRoomLeft?.();
     }
   }
 
@@ -199,27 +184,6 @@ export class WebSocketClient {
   requestStop(): void {
     if (!this.currentRoomId) return;
     this.socket?.emit('RequestStop', { roomId: this.currentRoomId });
-  }
-
-  // WebRTC signaling
-  sendSDPOffer(targetUserId: string, sdp: RTCSessionDescriptionInit): void {
-    if (!this.currentRoomId) return;
-    this.socket?.emit('SDPOffer', { roomId: this.currentRoomId, targetUserId, sdp });
-  }
-
-  sendRequestSDPOffer(targetUserId: string): void {
-    if (!this.currentRoomId) return;
-    this.socket?.emit('RequestSDPOffer', { roomId: this.currentRoomId, targetUserId });
-  }
-
-  sendSDPAnswer(targetUserId: string, sdp: RTCSessionDescriptionInit): void {
-    if (!this.currentRoomId) return;
-    this.socket?.emit('SDPAnswer', { roomId: this.currentRoomId, targetUserId, sdp });
-  }
-
-  sendICECandidate(targetUserId: string, candidate: RTCIceCandidateInit): void {
-    if (!this.currentRoomId) return;
-    this.socket?.emit('ICECandidate', { roomId: this.currentRoomId, targetUserId, candidate });
   }
 
   get roomId(): string | null {

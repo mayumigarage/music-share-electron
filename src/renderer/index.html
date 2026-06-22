@@ -20,7 +20,9 @@
       --panel-left-width: 240px;
       --panel-right-width: 280px;
       --control-height: 80px;
-      --topbar-height: 48px;
+      --topbar-height: 64px;
+      --room-section-height: 190px;
+      --members-panel-height: 140px;
     }
 
     * {
@@ -50,8 +52,8 @@
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
+      gap: 16px;
+      padding: 0 18px;
       z-index: 100;
     }
 
@@ -61,6 +63,14 @@
       gap: 8px;
       font-weight: 700;
       font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-toggle {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      font-size: 16px;
     }
 
     #top-bar .room-info {
@@ -69,7 +79,11 @@
       gap: 12px;
       font-size: 13px;
       color: var(--text-secondary);
+      margin-left: auto;
     }
+
+    /* Room information lives at the top of the right sidebar. */
+    #top-bar .room-info { display: none !important; }
 
     #top-bar .room-info .room-id {
       font-family: 'SFMono-Regular', Consolas, monospace;
@@ -82,7 +96,92 @@
     #top-bar .top-actions {
       display: flex;
       gap: 8px;
+      margin-left: auto;
     }
+
+    .workspace-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .workspace-switch {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--bg-primary);
+    }
+
+    .workspace-switch button {
+      border: 0;
+      border-radius: 6px;
+      padding: 7px 11px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .workspace-switch button:hover { color: var(--text-primary); }
+
+    .workspace-switch button.active {
+      color: #08130c;
+      background: var(--accent);
+      font-weight: 700;
+    }
+
+    .header-action {
+      width: auto;
+      padding: 7px 11px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .header-action:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+
+    .sort-wrapper { position: relative; }
+
+    #sort-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      z-index: 1100;
+      display: none;
+      min-width: 178px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, .35);
+    }
+
+    #sort-menu.open { display: block; }
+
+    .sort-menu-item {
+      display: block;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+      text-align: left;
+      font-size: 12px;
+    }
+
+    .sort-menu-item:hover { background: var(--bg-hover); }
 
     .btn-icon {
       background: transparent;
@@ -111,6 +210,57 @@
       display: flex;
     }
 
+    #left-panel, #right-panel {
+      transition: width .18s ease, opacity .15s ease, padding .18s ease;
+    }
+
+    #app-layout.left-collapsed #left-panel {
+      width: 40px;
+      padding: 6px 4px;
+      border-right-width: 1px;
+      opacity: 1;
+      overflow: hidden;
+      pointer-events: auto;
+    }
+
+    #app-layout.right-collapsed #right-panel {
+      width: 40px;
+      border-left-width: 1px;
+      opacity: 1;
+      overflow: hidden;
+      pointer-events: auto;
+    }
+
+    #app-layout.left-collapsed .sidebar-header {
+      justify-content: center;
+      padding: 0;
+    }
+
+    #app-layout.left-collapsed .sidebar-title,
+    #app-layout.left-collapsed .sidebar-count,
+    #app-layout.left-collapsed .playlist-grid {
+      display: none;
+    }
+
+    #app-layout.right-collapsed #room-section {
+      width: 40px;
+      height: 40px;
+      flex-basis: 40px;
+      padding: 4px;
+      border-bottom: 0;
+    }
+
+    #app-layout.right-collapsed .room-title-row {
+      justify-content: center;
+    }
+
+    #app-layout.right-collapsed .room-title-row > div:first-child,
+    #app-layout.right-collapsed #room-entry,
+    #app-layout.right-collapsed .room-actions,
+    #app-layout.right-collapsed #members-section {
+      display: none;
+    }
+
     /* ── Left Panel ── */
     #left-panel {
       width: var(--panel-left-width);
@@ -118,7 +268,7 @@
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      padding: 12px 0;
+      padding: 14px 12px;
       overflow-y: auto;
     }
 
@@ -166,6 +316,77 @@
     .playlist-create {
       margin-top: auto;
       padding: 12px 16px;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px 12px;
+    }
+
+    .sidebar-header-actions,
+    .room-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .sidebar-title {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .sidebar-count {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .playlist-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .playlist-card {
+      min-width: 0;
+      padding: 6px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .playlist-card:hover, .playlist-card.active {
+      background: var(--bg-tertiary);
+      border-color: var(--border);
+    }
+
+    .playlist-cover {
+      display: flex;
+      width: 100%;
+      aspect-ratio: 1;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      font-size: 31px;
+      background: linear-gradient(140deg, #3d5a80, #1d3557);
+    }
+
+    .playlist-card:nth-child(2) .playlist-cover { background: linear-gradient(140deg, #734b6d, #2f1b36); }
+    .playlist-card:nth-child(3) .playlist-cover { background: linear-gradient(140deg, #466d58, #163d2a); }
+    .playlist-card:nth-child(4) .playlist-cover { background: linear-gradient(140deg, #76633a, #332c18); }
+
+    .playlist-name {
+      display: block;
+      margin-top: 6px;
+      overflow: hidden;
+      font-size: 11px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .btn {
@@ -219,6 +440,13 @@
       border-bottom: 1px solid var(--border);
       padding: 0 16px;
       gap: 4px;
+      background: var(--bg-secondary);
+    }
+
+    #center-tabs .sort-wrapper {
+      display: flex;
+      align-items: center;
+      margin-left: auto;
     }
 
     .tab {
@@ -248,7 +476,7 @@
     #center-content {
       flex: 1;
       overflow-y: auto;
-      padding: 12px 16px;
+      padding: 16px;
     }
 
     .panel-header {
@@ -272,10 +500,12 @@
     .track-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 8px;
+      gap: 12px;
+      min-height: 78px;
+      padding: 10px 12px;
       background: var(--bg-secondary);
-      border-radius: 6px;
+      border: 1px solid transparent;
+      border-radius: 8px;
       cursor: pointer;
       transition: background 0.15s;
       position: relative;
@@ -283,6 +513,7 @@
 
     .track-item:hover {
       background: var(--bg-tertiary);
+      border-color: var(--border);
     }
 
     .track-item.dragging {
@@ -294,9 +525,9 @@
     }
 
     .track-thumb {
-      width: 40px;
-      height: 40px;
-      border-radius: 4px;
+      width: 58px;
+      height: 58px;
+      border-radius: 6px;
       background: var(--bg-tertiary);
       object-fit: cover;
       flex-shrink: 0;
@@ -307,11 +538,11 @@
       min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 5px;
     }
 
     .track-title {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -319,7 +550,7 @@
     }
 
     .track-meta {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--text-secondary);
       white-space: nowrap;
       overflow: hidden;
@@ -336,8 +567,8 @@
     }
 
     .track-added-by {
-      font-size: 11px;
-      color: var(--text-muted);
+      font-size: 12px;
+      color: var(--text-secondary);
       flex-shrink: 0;
       max-width: 80px;
       overflow: hidden;
@@ -347,16 +578,22 @@
 
     .track-actions {
       display: flex;
-      gap: 4px;
+      align-items: center;
+      gap: 6px;
       flex-shrink: 0;
     }
 
     .track-actions button {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      align-items: center;
+      justify-content: center;
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--text-muted);
       cursor: pointer;
-      padding: 4px;
+      padding: 0;
       border-radius: 4px;
       font-size: 14px;
       line-height: 1;
@@ -366,6 +603,93 @@
       color: var(--text-primary);
       background: var(--bg-hover);
     }
+
+    .track-actions .track-more {
+      font-size: 19px;
+      letter-spacing: 1px;
+    }
+
+    .track-actions .track-delete {
+      border-color: var(--border);
+      font-size: 19px;
+    }
+
+    .track-actions .track-delete:hover {
+      border-color: var(--danger);
+      background: rgba(226, 33, 52, .14);
+      color: #ff8c98;
+    }
+
+    .track-favorite {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+      color: var(--text-muted);
+      font-size: 20px;
+    }
+
+    .track-favorite.is-favorite {
+      color: #ffd166;
+    }
+
+    .track-favorite:hover {
+      color: #ffe29a;
+    }
+
+    .center-view { height: 100%; }
+
+    #playlist-center-panel {
+      display: none;
+      height: 100%;
+    }
+
+    .playlist-hero {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 112px;
+      margin-bottom: 18px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: linear-gradient(120deg, var(--bg-secondary), var(--bg-primary));
+    }
+
+    .playlist-hero-cover {
+      display: flex;
+      width: 78px;
+      height: 78px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: linear-gradient(140deg, #3d5a80, #1d3557);
+      font-size: 34px;
+    }
+
+    .playlist-hero-label { color: var(--text-secondary); font-size: 11px; }
+    .playlist-hero-title { margin-top: 4px; font-size: 20px; font-weight: 750; }
+    .playlist-hero-description { margin-top: 5px; color: var(--text-secondary); font-size: 12px; }
+
+    .search-box {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      outline: none;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .search-box:focus { border-color: var(--accent); }
 
     .empty-state {
       text-align: center;
@@ -383,10 +707,121 @@
       flex-direction: column;
     }
 
+    #room-section {
+      flex: 0 0 var(--room-section-height);
+      height: var(--room-section-height);
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .room-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .room-eyebrow {
+      margin-bottom: 2px;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+    }
+
+    .room-name {
+      max-width: 190px;
+      overflow: hidden;
+      font-size: 16px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .room-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .room-entry-tabs {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .room-entry-tabs .btn {
+      width: auto;
+      flex: 1;
+      padding: 5px 7px;
+      font-size: 11px;
+    }
+
+    .room-entry-tabs .btn.active {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .room-entry-form {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .room-entry-form input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      outline: none;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font: inherit;
+      font-size: 11px;
+    }
+
+    .room-entry-form input:focus { border-color: var(--accent); }
+
+    .room-entry-form .btn {
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+
+    .room-actions .btn {
+      width: auto;
+      min-width: 0;
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+
+    .room-id-copy {
+      flex: 1;
+      justify-content: space-between;
+    }
+
+    #sidebar-room-id {
+      overflow: hidden;
+      color: var(--text-secondary);
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .room-leave {
+      color: #ff8591;
+    }
+
+    .room-leave:hover {
+      background: rgba(226, 33, 52, .16);
+      color: #ff9fa8;
+    }
+
     #members-section {
       padding: 12px;
       border-bottom: 1px solid var(--border);
-      max-height: 50%;
+      height: var(--members-panel-height);
+      flex: 0 0 var(--members-panel-height);
       overflow-y: auto;
     }
 
@@ -721,6 +1156,131 @@
       width: auto;
     }
 
+    /* ── Add Track Search ── */
+    .track-add-modal {
+      width: min(980px, 92vw);
+      max-height: min(820px, 90vh);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .track-add-modal .modal-body {
+      overflow: auto;
+    }
+
+    .track-search-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .track-search-row input {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .track-search-button {
+      width: 38px;
+      flex: 0 0 38px;
+      padding: 0;
+      font-size: 16px;
+    }
+
+    #track-candidates {
+      display: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .track-candidate-group {
+      min-width: 0;
+    }
+
+    .track-candidate-group-title {
+      margin: 0 0 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+
+    .track-candidate-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .track-candidate {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .track-candidate:hover:not(:disabled) {
+      background: var(--bg-hover);
+    }
+
+    .track-candidate.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .track-candidate:disabled {
+      cursor: default;
+      opacity: .6;
+    }
+
+    .track-candidate-thumb {
+      width: 52px;
+      height: 52px;
+      flex: 0 0 52px;
+      border-radius: 5px;
+      object-fit: cover;
+      background: #333;
+    }
+
+    .track-candidate-copy {
+      min-width: 0;
+    }
+
+    .track-candidate-title,
+    .track-candidate-meta {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .track-candidate-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .track-candidate-meta {
+      margin-top: 4px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .track-candidate-error {
+      margin: 0;
+      padding: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    @media (max-width: 640px) {
+      #track-candidates { grid-template-columns: 1fr; }
+    }
+
     .mode-options {
       display: flex;
       gap: 10px;
@@ -812,9 +1372,12 @@
   <!-- Top Bar -->
   <header id="top-bar">
     <div class="brand">🎵 MusicShare</div>
-    <div class="room-info" id="room-info" style="display:none;">
-      <span>Room ID: <span class="room-id" id="room-id-display"></span></span>
-      <span id="room-mode-display"></span>
+    <div class="workspace-controls" aria-label="表示する楽曲一覧">
+      <div class="workspace-switch" role="group" aria-label="楽曲一覧の切替">
+        <button class="workspace-tab" data-workspace="playlist" type="button">プレイリスト</button>
+        <button class="workspace-tab active" data-workspace="queue" type="button">共有楽曲キュー</button>
+      </div>
+      <button class="btn btn-primary header-action" id="btn-header-add-track" type="button">＋ 追加</button>
     </div>
     <div class="top-actions">
       <button class="btn-icon" id="btn-settings" title="Settings">⚙️</button>
@@ -823,32 +1386,61 @@
 
   <!-- Main Layout -->
   <div id="app-layout">
-    <!-- Left Panel: Library / Playlists -->
+    <!-- Left Panel: Playlists -->
     <aside id="left-panel">
-      <div class="nav-section">
-        <div class="nav-section-title">ライブラリ</div>
-        <div class="nav-item active" data-view="home"><span class="icon">🏠</span>ホーム</div>
-        <div class="nav-item" data-view="search"><span class="icon">🔍</span>検索</div>
+      <div class="sidebar-header">
+        <span class="sidebar-title">プレイリスト</span>
+        <div class="sidebar-header-actions">
+          <span class="sidebar-count">4件</span>
+          <button class="btn-icon sidebar-toggle" id="btn-toggle-left-sidebar" type="button" title="左サイドバーを閉じる" aria-label="左サイドバーを閉じる" aria-expanded="true">◀</button>
+        </div>
       </div>
-      <div class="nav-section">
-        <div class="nav-section-title">プレイリスト</div>
-        <div class="nav-item" data-playlist="favorites"><span class="icon">🎵</span>お気に入り</div>
-        <div class="nav-item" data-playlist="work"><span class="icon">💼</span>作業用BGM</div>
-        <div class="nav-item" data-playlist="drive"><span class="icon">🚗</span>ドライブ用</div>
-      </div>
-      <div class="playlist-create">
-        <button class="btn" id="btn-create-playlist">➕ プレイリスト作成</button>
+      <div class="playlist-grid" id="playlist-grid">
+        <button class="playlist-card active" data-playlist="favorites" data-playlist-name="お気に入り" type="button">
+          <span class="playlist-cover">♥</span><span class="playlist-name">お気に入り</span>
+        </button>
+        <button class="playlist-card" data-playlist="work" data-playlist-name="作業用BGM" type="button">
+          <span class="playlist-cover">☕</span><span class="playlist-name">作業用BGM</span>
+        </button>
+        <button class="playlist-card" data-playlist="drive" data-playlist-name="ドライブ用" type="button">
+          <span class="playlist-cover">🚗</span><span class="playlist-name">ドライブ用</span>
+        </button>
+        <button class="playlist-card" data-playlist="recent" data-playlist-name="最近追加した曲" type="button">
+          <span class="playlist-cover">♫</span><span class="playlist-name">最近追加した曲</span>
+        </button>
       </div>
     </aside>
 
     <!-- Center Panel: Queue / History -->
     <main id="center-panel">
-      <div id="center-tabs">
-        <button class="tab active" data-tab="queue">🎵 キュー</button>
-        <button class="tab" data-tab="history">📜 履歴</button>
-      </div>
       <div id="center-content">
-        <div id="queue-panel" class="tab-panel">
+        <div id="playlist-center-panel" class="center-view">
+          <div class="playlist-hero">
+            <div class="playlist-hero-cover" id="playlist-hero-cover">♥</div>
+            <div>
+              <div class="playlist-hero-label">プレイリスト</div>
+              <div class="playlist-hero-title" id="playlist-center-title">お気に入り</div>
+              <div class="playlist-hero-description">プレイリスト機能は今後のフェーズで楽曲管理に対応します。</div>
+            </div>
+          </div>
+          <div class="track-list" id="favorite-playlist-list"></div>
+        </div>
+        <div id="shared-center-panel" class="center-view">
+          <div id="center-tabs">
+            <button class="tab active" data-tab="queue" type="button">🎵 共有キュー</button>
+            <button class="tab" data-tab="history" type="button">📜 履歴</button>
+            <button class="tab" data-tab="search" type="button">🔍 検索</button>
+            <div class="sort-wrapper">
+              <button class="btn header-action" id="btn-sort" type="button" aria-expanded="false">↕ ソート</button>
+              <div id="sort-menu" role="menu" aria-label="共有キューをソート">
+                <button class="sort-menu-item" data-sort="title-asc" type="button">曲名（A → Z）</button>
+                <button class="sort-menu-item" data-sort="title-desc" type="button">曲名（Z → A）</button>
+                <button class="sort-menu-item" data-sort="duration-asc" type="button">曲の長さ（短い順）</button>
+                <button class="sort-menu-item" data-sort="duration-desc" type="button">曲の長さ（長い順）</button>
+              </div>
+            </div>
+          </div>
+          <div id="queue-panel" class="tab-panel">
           <div id="spotify-auth-banner" style="display:none;margin-bottom:12px;padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;align-items:center;justify-content:space-between;gap:12px;">
             <div style="display:flex;align-items:center;gap:10px;">
               <span style="font-size:20px;">🎵</span>
@@ -861,21 +1453,59 @@
           </div>
           <div class="panel-header">
             <span class="panel-title">🎵 再生待ちのキュー (<span id="queue-count">0</span>曲)</span>
-            <button class="btn btn-primary" id="btn-add-track">➕ 曲を追加</button>
           </div>
           <div class="track-list" id="queue-list"></div>
         </div>
-        <div id="history-panel" class="tab-panel" style="display:none;">
-          <div class="panel-header">
-            <span class="panel-title">📜 再生履歴</span>
+          <div id="history-panel" class="tab-panel" style="display:none;">
+            <div class="panel-header">
+              <span class="panel-title">📜 再生履歴</span>
+            </div>
+            <div class="track-list" id="history-list"></div>
           </div>
-          <div class="track-list" id="history-list"></div>
+          <div id="search-panel" class="tab-panel" style="display:none;">
+            <div class="panel-header"><span class="panel-title">🔍 楽曲を検索</span></div>
+            <input class="search-box" id="search-query" type="search" placeholder="検索機能は今後追加されます" disabled />
+            <div class="empty-state">検索結果はここに表示されます</div>
+          </div>
         </div>
       </div>
     </main>
 
     <!-- Right Panel: Members + Player -->
     <aside id="right-panel">
+      <section id="room-section" aria-label="ルーム情報">
+        <div class="room-title-row">
+          <div>
+            <div class="room-eyebrow">ROOM</div>
+            <div class="room-name" id="sidebar-room-name">ルーム</div>
+          </div>
+          <div class="room-header-actions">
+            <button class="btn-icon sidebar-toggle" id="btn-toggle-right-sidebar" type="button" title="右サイドバーを閉じる" aria-label="右サイドバーを閉じる" aria-expanded="true">▶</button>
+          </div>
+        </div>
+        <div id="room-entry">
+          <div class="room-entry-tabs" role="group" aria-label="ルーム操作">
+            <button class="btn active" id="btn-room-create-mode" type="button">作成</button>
+            <button class="btn" id="btn-room-join-mode" type="button">参加</button>
+          </div>
+          <form class="room-entry-form" id="room-create-form-sidebar">
+            <input id="input-sidebar-room-name" type="text" placeholder="ルーム名" value="Music Room" />
+            <input id="input-sidebar-user-name-create" type="text" placeholder="あなたの名前" />
+            <button class="btn btn-primary" type="submit">ルームを作成</button>
+          </form>
+          <form class="room-entry-form" id="room-join-form-sidebar" style="display:none;">
+            <input id="input-sidebar-room-id" type="text" placeholder="ルームID" maxlength="6" />
+            <input id="input-sidebar-user-name-join" type="text" placeholder="あなたの名前" />
+            <button class="btn btn-primary" type="submit">ルームに参加</button>
+          </form>
+        </div>
+        <div class="room-actions" id="room-details" style="display:none;">
+          <button class="btn room-id-copy" id="btn-copy-room-id" type="button" disabled>
+            <span>IDをコピー</span><span id="sidebar-room-id">------</span>
+          </button>
+          <button class="btn room-leave" id="btn-leave-room" type="button" disabled>退出</button>
+        </div>
+      </section>
       <div id="members-section">
         <div class="members-header">
           <span>👥 メンバー (<span id="member-count">0</span>)</span>
@@ -902,7 +1532,6 @@
         <button class="control-btn" id="btn-prev" title="Previous">⏮️</button>
         <button class="control-btn play" id="btn-play-pause" title="Play/Pause">▶️</button>
         <button class="control-btn" id="btn-next" title="Next">⏭️</button>
-        <button class="control-btn" id="btn-stop" title="Stop">⏹️</button>
       </div>
       <div id="seek-bar-container">
         <span class="time-label" id="time-current">0:00</span>
@@ -919,79 +1548,38 @@
   <!-- Custom Context Menu -->
   <div id="context-menu"></div>
 
-  <!-- Modal Overlay -->
-  <div id="modal-overlay">
-    <div class="modal" id="room-modal">
-      <div class="modal-header">🚪 ルームに入る</div>
-      <div class="modal-body">
-        <div class="mode-options">
-          <div class="mode-option selected" data-mode="create">
-            <div class="mode-icon">🏠</div>
-            <div class="mode-label">ルーム作成</div>
-            <div class="mode-desc">新しいルームを作ってホストになる</div>
-          </div>
-          <div class="mode-option" data-mode="join">
-            <div class="mode-icon">🚪</div>
-            <div class="mode-label">ルーム参加</div>
-            <div class="mode-desc">既存のルームに参加する</div>
-          </div>
-        </div>
-        <div id="create-form">
-          <div class="form-group">
-            <label>ルーム名</label>
-            <input type="text" id="input-room-name" placeholder="My Music Room" value="Music Room" />
-          </div>
-          <div class="form-group">
-            <label>あなたの名前</label>
-            <input type="text" id="input-user-name-create" placeholder="ユーザー名" />
-          </div>
-          <div class="form-group">
-            <label>再生モード</label>
-            <select id="input-room-mode">
-              <option value="Individual">個別再生</option>
-              <option value="HostBroadcast">ホスト配信</option>
-            </select>
-          </div>
-        </div>
-        <div id="join-form" style="display:none;">
-          <div class="form-group">
-            <label>ルーム ID</label>
-            <input type="text" id="input-room-id" placeholder="ABC123" maxlength="6" />
-          </div>
-          <div class="form-group">
-            <label>あなたの名前</label>
-            <input type="text" id="input-user-name-join" placeholder="ユーザー名" />
-          </div>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn" id="btn-modal-cancel">キャンセル</button>
-        <button class="btn btn-primary" id="btn-modal-confirm">作成する</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Add Track Modal (inline) -->
   <div id="modal-overlay-track" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:none;align-items:center;justify-content:center;">
-    <div class="modal" style="width:480px;">
+    <div class="modal track-add-modal">
       <div class="modal-header">➕ 曲を追加</div>
       <div class="modal-body">
         <div class="form-group">
-          <label>音楽サービスの URL</label>
-          <input type="text" id="input-track-url" placeholder="https://www.youtube.com/watch?v=..." />
+          <label>URL</label>
+          <input type="text" id="input-track-url" placeholder="https://..." />
         </div>
-        <div id="track-preview" style="display:none;gap:10px;align-items:center;background:var(--bg-tertiary);padding:10px;border-radius:6px;">
-          <img id="preview-thumb" src="" style="width:60px;height:60px;border-radius:4px;object-fit:cover;" />
-          <div style="flex:1;min-width:0;">
-            <div id="preview-title" style="font-size:13px;font-weight:600;"></div>
-            <div id="preview-artist" style="font-size:12px;color:var(--text-secondary);"></div>
+        <div class="form-group">
+          <label for="input-track-search-query">検索コマンド</label>
+          <div class="track-search-row">
+            <input type="text" id="input-track-search-query" placeholder="URL解析後に検索語が入ります" />
+            <button class="btn track-search-button" id="btn-track-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索">⌕</button>
           </div>
+        </div>
+        <div id="track-candidates">
+          <section class="track-candidate-group" aria-labelledby="youtube-candidates-title">
+            <h3 class="track-candidate-group-title" id="youtube-candidates-title">YouTube</h3>
+            <div class="track-candidate-list" id="track-candidate-youtube"></div>
+          </section>
+          <section class="track-candidate-group" aria-labelledby="youtube-music-candidates-title">
+            <h3 class="track-candidate-group-title" id="youtube-music-candidates-title">YouTube Music</h3>
+            <div class="track-candidate-list" id="track-candidate-youtube-music"></div>
+          </section>
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn" id="btn-track-cancel">キャンセル</button>
+        <button class="btn" id="btn-track-add-playlist" disabled>プレイリストに追加</button>
         <button class="btn" id="btn-track-resolve">URLを解析</button>
-        <button class="btn btn-primary" id="btn-track-add" style="display:none;">追加する</button>
+        <button class="btn btn-primary" id="btn-track-add-queue" disabled>キューに追加</button>
       </div>
     </div>
   </div>
@@ -1001,13 +1589,19 @@
     <div class="modal" style="width:420px;">
       <div class="modal-header">⚙️ 設定</div>
       <div class="modal-body">
-        <div class="form-group" style="flex-direction:row;align-items:center;justify-content:space-between;">
-          <label style="margin:0;">SpotifyリンクをYouTubeに自動変換</label>
-          <input type="checkbox" id="setting-spotify-convert" checked style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent);" />
+        <div class="form-group" style="flex-direction:column;align-items:flex-start;gap:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            <label style="margin:0;">Spotify アカウント</label>
+            <span id="settings-spotify-status" style="font-size:12px;color:var(--text-secondary);">未ログイン</span>
+          </div>
+          <div style="display:flex;gap:8px;width:100%;">
+            <button class="btn btn-primary" id="btn-settings-spotify-login" style="flex:1;">ログイン</button>
+            <button class="btn btn-danger" id="btn-settings-spotify-logout" style="flex:1;display:none;">ログアウト</button>
+          </div>
+          <p style="font-size:12px;color:var(--text-secondary);margin:0;">
+            Spotify Premium が必要です。ログインすると Spotify の曲を直接再生できます。
+          </p>
         </div>
-        <p style="font-size:12px;color:var(--text-secondary);margin:0;">
-          有効にすると、SpotifyのリンクがYouTubeで自動的に再生されます（Spotify Premium不要）。
-        </p>
       </div>
       <div class="modal-actions">
         <button class="btn btn-primary" id="btn-settings-close">閉じる</button>

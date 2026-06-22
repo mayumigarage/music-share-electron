@@ -13,17 +13,15 @@ import {
   ipcMain,
   shell,
   dialog,
-  desktopCapturer,
 } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PlayerBridge } from './player-bridge';
 import { LayoutManager } from './layout-manager';
-import { resolveTrack, convertSpotifyToYouTube } from './track-resolver';
+import { resolveTrack } from './track-resolver';
 import { appendCrashLog } from './crash-handler';
 import { SpotifyAuthManager } from './spotify-auth';
-import type { PlayerCommand, PlayerMessage } from '../shared/preload-api';
-import { MusicServiceType } from '../shared/models';
+import type { PlayerCommand, PlayerMessage, TrackResolverDebugLog } from '../shared/preload-api';
 
 const WINDOW_WIDTH = 1200;
 const WINDOW_HEIGHT = 700;
@@ -37,7 +35,6 @@ export class WindowManager {
   private tray!: Tray;
   private playerServerUrl: string;
   private spotifyAuthManager: SpotifyAuthManager;
-  private currentService: MusicServiceType = MusicServiceType.YouTube;
   private pendingAuthDeferred: {
     resolve: (value: { success: boolean; error?: string }) => void;
     timer: NodeJS.Timeout;
@@ -112,7 +109,19 @@ export class WindowManager {
       const title = await this.mainView.webContents.executeJavaScript('document.title');
       console.log('[Main] document.title:', title);
       this.win.show();
-      this.mainView.webContents.openDevTools({ mode: 'detach' });
+    });
+
+    // Keep developer tools closed by default, and make F12 explicitly toggle
+    // the inspector for the main renderer view.
+    this.mainView.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.key !== 'F12') return;
+
+      event.preventDefault();
+      if (this.mainView.webContents.isDevToolsOpened()) {
+        this.mainView.webContents.closeDevTools();
+      } else {
+        this.mainView.webContents.openDevTools({ mode: 'detach' });
+      }
     });
 
     this.win.contentView.addChildView(this.mainView);
@@ -120,9 +129,8 @@ export class WindowManager {
   }
 
   private createPlayerView(): void {
-    // Default to YouTube player initially.
-    this.currentService = MusicServiceType.YouTube;
-    this.playerBridge = new PlayerBridge(this.win.contentView, MusicServiceType.YouTube, this.playerServerUrl);
+    // This single bridge always hosts YouTubePlayer.html for the app lifetime.
+    this.playerBridge = new PlayerBridge(this.win.contentView, this.playerServerUrl);
 
     // Relay player messages to the main renderer view.
     this.playerBridge.onPlayerMessage((msg: PlayerMessage) => {
@@ -131,12 +139,6 @@ export class WindowManager {
       }
     });
 
-    // Phase 6.2: Relay WebRTC signaling from player preload to renderer.
-    this.playerBridge.onPlayerSignaling((payload: unknown) => {
-      if (!this.mainView.webContents.isDestroyed()) {
-        this.mainView.webContents.send('player-signaling', payload);
-      }
-    });
   }
 
   private setupLayout(): void {
@@ -181,36 +183,44 @@ export class WindowManager {
       }
     });
 
-    // Minimize to tray instead of taskbar
-    this.win.on('minimize', () => {
-      this.win.hide();
-    });
+    // Let the platform handle minimization normally so the app remains
+    // visible in the taskbar. The tray icon can still explicitly hide/show it.
   }
 
   private registerIpcHandlers(): void {
+    ipcMain.handle('set-sidebar-visibility', async (_, leftVisible: unknown, rightVisible: unknown) => {
+      if (typeof leftVisible !== 'boolean' || typeof rightVisible !== 'boolean') {
+        throw new TypeError('Sidebar visibility must be boolean values');
+      }
+      this.layoutManager.setSidebarVisibility(leftVisible, rightVisible);
+    });
+
     ipcMain.handle('open-external', async (_, url: string) => {
       await shell.openExternal(url);
     });
 
-    ipcMain.handle('resolve-track', async (_, url: string) => {
-      return resolveTrack(url);
-    });
-
-    ipcMain.handle('convert-spotify-to-youtube', async (_, url: string) => {
-      return convertSpotifyToYouTube(url);
+    ipcMain.handle('resolve-track', async (_, url: string, options?: { searchQuery?: unknown }) => {
+      const searchQuery = typeof options?.searchQuery === 'string'
+        ? options.searchQuery.slice(0, 500)
+        : undefined;
+      return resolveTrack(url, (log: TrackResolverDebugLog) => {
+        if (!this.mainView.webContents.isDestroyed()) {
+          this.mainView.webContents.send('track-resolver-debug', log);
+        }
+      }, () => this.spotifyAuthManager.getValidAccessToken(), { searchQuery }, (result) => {
+        if (!this.mainView.webContents.isDestroyed()) {
+          this.mainView.webContents.send('youtube-music-candidates', result);
+        }
+      });
     });
 
     ipcMain.handle('send-to-player', async (_, command: PlayerCommand) => {
-      if (command.type === 'loadTrack' && command.service && this.currentService !== command.service) {
-        this.switchPlayer(command.service);
+      // Playback-related commands need an initialized player; pause/stop are safe to fire regardless.
+      const needsReady = ['loadTrack', 'play', 'resume', 'seek', 'setVolume'].includes(command.type);
+      if (needsReady) {
         await this.playerBridge.whenReady();
       }
       await this.playerBridge.sendCommand(command);
-    });
-
-    // Allow renderer to request a player service switch.
-    ipcMain.handle('switch-player', async (_, service: MusicServiceType) => {
-      this.switchPlayer(service);
     });
 
     // Phase 8.1: Receive crash reports from renderer and append to crash.log
@@ -222,33 +232,6 @@ export class WindowManager {
     ipcMain.handle('show-error-dialog', async (_, title: string, message: string) => {
       dialog.showErrorBox(title, message);
     });
-
-    // Phase 6.1: Provide desktop audio source for WebRTC host broadcast
-    ipcMain.handle('get-desktop-audio-source', async () => {
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ['window'],
-          thumbnailSize: { width: 1, height: 1 },
-        });
-
-        // Match by window title.  Electron windows are listed by their title.
-        const ourWindow = sources.find((s) => s.name === 'MusicShare');
-
-        if (!ourWindow) {
-          console.warn('[Main] MusicShare window not found in desktopCapturer sources');
-          return null;
-        }
-
-        console.log('[Main] Found desktop audio source:', ourWindow.id, ourWindow.name);
-        return { id: ourWindow.id, name: ourWindow.name };
-      } catch (err) {
-        console.error('[Main] desktopCapturer error:', err);
-        return null;
-      }
-    });
-
-    // Phase 6.2: Relay WebRTC signaling from renderer to player WebContentsView.
-    ipcMain.on('send-player-signaling', this.onSendPlayerSignaling);
 
     // Phase 5: Spotify OAuth PKCE flow handlers.
     ipcMain.handle('start-spotify-auth', async () => {
@@ -276,6 +259,26 @@ export class WindowManager {
       const token = await this.spotifyAuthManager.getValidAccessToken();
       return token;
     });
+
+    ipcMain.handle('set-spotify-token', async (_, token: string) => {
+      this.spotifyAuthManager.injectToken(token);
+      // Spotify account state is retained for the settings UI; playback itself
+      // is always performed by the YouTube player.
+      if (!this.mainView.webContents.isDestroyed()) {
+        this.mainView.webContents.send('spotify-token', token);
+      }
+    });
+
+    ipcMain.handle('clear-spotify-auth', async () => {
+      this.spotifyAuthManager.clearTokens();
+      // Broadcast null so the settings UI updates immediately.
+      if (!this.mainView.webContents.isDestroyed()) {
+        this.mainView.webContents.send('spotify-token', null);
+      }
+    });
+
+    // If a stored token exists from a previous session, broadcast it now.
+    this.broadcastInitialToken();
   }
 
   async handleSpotifyCallback(url: string): Promise<void> {
@@ -290,58 +293,19 @@ export class WindowManager {
       if (token && !this.mainView.webContents.isDestroyed()) {
         this.mainView.webContents.send('spotify-token', token);
       }
-      // Also push token to the player view only if it is currently Spotify.
-      if (this.currentService === MusicServiceType.Spotify) {
-        const playerWc = this.playerBridge.getWebContentsView().webContents;
-        if (token && !playerWc.isDestroyed()) {
-          playerWc.send('spotify-token', token);
-        }
-      }
     }
   }
 
-  switchPlayer(service: MusicServiceType): void {
-    if (this.currentService === service) return;
-    this.currentService = service;
-    const oldPlayer = this.playerBridge;
-
-    // Create new bridge first so we can preserve message forwarding.
-    this.playerBridge = new PlayerBridge(this.win.contentView, service, this.playerServerUrl);
-    this.playerBridge.onPlayerMessage((msg: PlayerMessage) => {
+  private async broadcastInitialToken(): Promise<void> {
+    try {
+      const token = await this.spotifyAuthManager.getValidAccessToken();
+      if (!token) return;
       if (!this.mainView.webContents.isDestroyed()) {
-        this.mainView.webContents.send('player-message', msg);
+        this.mainView.webContents.send('spotify-token', token);
       }
-    });
-    this.playerBridge.onPlayerSignaling((payload: unknown) => {
-      if (!this.mainView.webContents.isDestroyed()) {
-        this.mainView.webContents.send('player-signaling', payload);
-      }
-    });
-
-    // Update layout references
-    this.layoutManager.destroy();
-    this.layoutManager = new LayoutManager(
-      this.win,
-      this.mainView,
-      this.playerBridge.getWebContentsView(),
-    );
-
-    // If switching to Spotify, push a valid token to the player immediately.
-    if (service === MusicServiceType.Spotify) {
-      this.spotifyAuthManager.getValidAccessToken().then((token) => {
-        const playerWc = this.playerBridge.getWebContentsView().webContents;
-        if (token && !playerWc.isDestroyed()) {
-          playerWc.send('spotify-token', token);
-        }
-      });
+    } catch {
+      // Ignore errors; unauthenticated state is fine on startup
     }
-
-    // Dispose old player after a short delay so the Spotify SDK (or other
-    // service) has time to clean up its remote device/session state before
-    // a new instance tries to initialize with the same credentials.
-    setTimeout(() => {
-      oldPlayer.dispose();
-    }, 1000);
   }
 
   getWindow(): BaseWindow {
@@ -353,18 +317,14 @@ export class WindowManager {
     this.playerBridge?.dispose();
     this.tray?.destroy();
     ipcMain.removeHandler('open-external');
+    ipcMain.removeHandler('set-sidebar-visibility');
     ipcMain.removeHandler('resolve-track');
     ipcMain.removeHandler('send-to-player');
-    ipcMain.removeHandler('switch-player');
     ipcMain.removeHandler('report-crash');
     ipcMain.removeHandler('show-error-dialog');
-    ipcMain.removeHandler('get-desktop-audio-source');
     ipcMain.removeHandler('start-spotify-auth');
     ipcMain.removeHandler('get-spotify-token');
-    ipcMain.removeListener('send-player-signaling', this.onSendPlayerSignaling);
+    ipcMain.removeHandler('set-spotify-token');
+    ipcMain.removeHandler('clear-spotify-auth');
   }
-
-  private onSendPlayerSignaling = (_event: Electron.IpcMainEvent, payload: unknown) => {
-    this.playerBridge.sendSignaling(payload);
-  };
 }

@@ -27,6 +27,20 @@
     let isPlaying = false;
     let spotifyToken = '';
     let previousToken = '';
+    let endedSent = false;
+    let trackChangeIgnoreUntil = 0;
+
+    // Device readiness promise so playTrack can wait for device_id instead of failing immediately.
+    let deviceReadyResolve = null;
+    let deviceReadyReject = null;
+    let deviceReadyPromise = null;
+    function resetDeviceReadyPromise() {
+      deviceReadyPromise = new Promise((resolve, reject) => {
+        deviceReadyResolve = resolve;
+        deviceReadyReject = reject;
+      });
+    }
+    resetDeviceReadyPromise();
 
     /** Send a structured message to Main via the player preload bridge. */
     function send(msg) {
@@ -48,39 +62,80 @@
           player.disconnect().then(() => player.connect()).then(() => {
             if (deviceId) activateDevice(deviceId);
           });
+        } else if (newToken && player && newToken !== previousToken && deviceId) {
+          // Token refreshed while player is active; re-activate to keep device alive
+          previousToken = newToken;
+          activateDevice(deviceId, false, newToken);
         } else {
           previousToken = newToken;
         }
       });
     }
 
-    /** Activate this Web Playback SDK device so the Web API can control it. */
-    function activateDevice(id, shouldPlay = false, token = null) {
+    /**
+     * Activate this Web Playback SDK device so the Web API can control it.
+     * Retries up to 3 times with exponential backoff (500ms, 1s, 2s).
+     * Returns true if activation succeeded, false otherwise.
+     */
+    async function activateDevice(id, shouldPlay = false, token = null) {
       const authToken = token || spotifyToken;
-      if (!authToken) return Promise.resolve();
-      return fetch('https://api.spotify.com/v1/me/player', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ device_ids: [id], play: shouldPlay }),
-      }).catch(() => {
-        // ignore activation errors; playTrack will surface any real problems
-      });
+      if (!authToken) return false;
+
+      const delays = [500, 1000, 2000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        try {
+          const response = await fetch('https://api.spotify.com/v1/me/player', {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ device_ids: [id], play: shouldPlay }),
+          });
+          // 204 = success, 202 = accepted (no active device state yet)
+          if (response.status === 204 || response.status === 202 || response.ok) {
+            return true;
+          }
+          // On last attempt, propagate the failure
+          if (attempt === delays.length - 1) {
+            return false;
+          }
+        } catch {
+          if (attempt === delays.length - 1) {
+            return false;
+          }
+        }
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+      }
+      return false;
     }
 
-    /** Reconnect player and re-activate device to recover from error states. */
+    /**
+     * Reconnect player and re-activate device to recover from error states.
+     * Waits for the 'ready' event (device_id) before returning.
+     */
     async function reconnectDevice() {
-      if (!player) return;
+      if (!player) return false;
       try {
+        // Reset the promise so we can wait for a fresh device_id
+        resetDeviceReadyPromise();
         await player.disconnect();
         const success = await player.connect();
-        if (success && deviceId) {
-          await activateDevice(deviceId);
+        if (!success) {
+          return false;
         }
+        // Wait up to 10 seconds for the ready event to provide a new device_id
+        await Promise.race([
+          deviceReadyPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('reconnect_timeout')), 10000)),
+        ]);
+        if (deviceId) {
+          await activateDevice(deviceId);
+          return true;
+        }
+        return false;
       } catch {
-        // ignore reconnection errors
+        return false;
       }
     }
 
@@ -125,6 +180,11 @@
 
       player.addListener('ready', async ({ device_id }) => {
         deviceId = device_id;
+        if (deviceReadyResolve) {
+          deviceReadyResolve();
+          deviceReadyResolve = null;
+          deviceReadyReject = null;
+        }
         send({ type: 'ready' });
         document.getElementById('status').textContent = 'Spotify Ready (authentication required for playback)';
         await activateDevice(device_id);
@@ -132,15 +192,33 @@
 
       player.addListener('not_ready', ({ device_id }) => {
         deviceId = null;
+        // Reset the promise so subsequent playTrack calls wait for reconnection
+        resetDeviceReadyPromise();
       });
 
       player.addListener('player_state_changed', (state) => {
         if (!state) return;
+
+        const currentTrack = state.track_window?.current_track;
+        const currentUri = currentTrack ? currentTrack.uri : null;
+
+        // Detect Spotify auto-queue advancement (ignore during the 3s grace period after load)
+        if (currentTrackUri && currentUri && currentUri !== currentTrackUri && Date.now() > trackChangeIgnoreUntil) {
+          // Spotify started playing a different track from its internal queue.
+          // Pause it and let the app handle loading the next queued track.
+          player.pause();
+          if (!endedSent) {
+            endedSent = true;
+            send({ type: 'ended' });
+            stopReportInterval();
+          }
+          return;
+        }
+
         isPlaying = !state.paused;
         const currentTime = state.position / 1000;
         currentDuration = state.duration / 1000;
 
-        const currentTrack = state.track_window?.current_track;
         const trackInfo = currentTrack ? {
           title: currentTrack.name,
           artist: currentTrack.artists.map((a) => a.name).join(', '),
@@ -198,7 +276,7 @@
     };
 
     function reportTimeUpdate() {
-      if (!player) return;
+      if (!player || endedSent) return;
       player.getCurrentState().then((state) => {
         if (!state) return;
         const positionSec = state.position / 1000;
@@ -206,7 +284,9 @@
         send({ type: 'timeUpdate', currentTimeSeconds: positionSec });
 
         // Detect track end for services that don't emit 'ended' (Spotify).
-        if (durationSec > 0 && positionSec >= durationSec - 0.3) {
+        // Require at least 3 seconds of playback to avoid false detection at start.
+        if (!endedSent && durationSec > 0 && positionSec >= durationSec - 0.3 && positionSec > 3) {
+          endedSent = true;
           send({ type: 'ended' });
           stopReportInterval();
         }
@@ -232,6 +312,8 @@
     // ========================================================================
 
     async function playTrack(url) {
+      endedSent = false;
+      trackChangeIgnoreUntil = Date.now() + 3000; // ignore auto-advance detection for 3s after load
       let uri = url;
       if (url.includes('open.spotify.com')) {
         const match = url.match(/track\/([a-zA-Z0-9]+)/);
@@ -257,48 +339,103 @@
         send({ type: 'error', error: 'auth_required|Spotify playback requires authentication' });
         return;
       }
+
+      // If no deviceId yet, wait up to 10s for the player to become ready.
+      if (!deviceId) {
+        try {
+          await Promise.race([
+            deviceReadyPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('device_ready_timeout')), 10000)),
+          ]);
+        } catch {
+          send({ type: 'error', error: 'no_device|Spotify player not ready' });
+          return;
+        }
+      }
+
       if (!deviceId) {
         send({ type: 'error', error: 'no_device|Spotify player not ready' });
         return;
       }
 
-      try {
-        // Ensure device is active before attempting playback (fire-and-forget;
-        // the play request itself will also activate the device).
-        activateDevice(deviceId, false, token).catch(() => {});
+      // Attempt playback with retry logic for recoverable errors.
+      // Spotify Web API automatically activates the device when device_id is
+      // passed to the /play endpoint, so we call play directly and only fall
+      // back to explicit activation on 404 (device not yet ready).
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ uris: [uri], context_uri: null }),
+          });
 
-        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ uris: [uri] }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => null);
-          const msg = data?.error?.message || `HTTP ${response.status}`;
-          // Provide a clearer message for common errors
-          let friendly = msg;
-          if (response.status === 403) {
-            friendly = 'Spotify playback requires a Premium account (HTTP 403)';
-          } else if (response.status === 404) {
-            friendly = 'No active Spotify device found (HTTP 404). Retrying...';
-          } else if (response.status === 401) {
-            friendly = 'Spotify token expired or invalid (HTTP 401)';
+          if (!response.ok) {
+            const data = await response.json().catch(() => null);
+            const msg = data?.error?.message || `HTTP ${response.status}`;
+            // Provide a clearer message for common errors
+            let friendly = msg;
+            if (response.status === 403) {
+              friendly = 'Spotify playback requires a Premium account (HTTP 403)';
+            } else if (response.status === 404) {
+              friendly = 'No active Spotify device found (HTTP 404). Retrying...';
+            } else if (response.status === 401) {
+              friendly = 'Spotify token expired or invalid (HTTP 401)';
+            }
+            throw new Error(friendly);
           }
-          throw new Error(friendly);
-        }
 
-        send({ type: 'loaded', uri });
-      } catch (err) {
-        const errorMsg = 'playback|' + err.message;
-        send({ type: 'error', error: errorMsg });
+          send({ type: 'loaded', uri });
+          return; // Success — exit the retry loop
+        } catch (err) {
+          const isLastAttempt = attempt >= maxRetries;
+          const errMsg = err.message || String(err);
 
-        // Attempt to recover by reconnecting the device on 404/no-device errors
-        if (err.message.includes('404') || err.message.includes('no_device')) {
-          await reconnectDevice();
+          // Classify the error
+          const isNoDevice = errMsg.includes('404') || errMsg.includes('No active') || errMsg.includes('no_device');
+          const isAuth = errMsg.includes('401') || errMsg.includes('token expired') || errMsg.includes('authentication');
+          const isPremium = errMsg.includes('403') || errMsg.includes('Premium');
+
+          if (isPremium) {
+            send({ type: 'error', error: 'playback|' + errMsg });
+            return;
+          }
+
+          if (isAuth) {
+            send({ type: 'error', error: 'auth_required|' + errMsg });
+            return;
+          }
+
+          if (isNoDevice && !isLastAttempt) {
+            // Try to recover by explicitly activating or reconnecting the device
+            send({ type: 'warning', warning: 'Spotify device not active, attempting activation...' });
+            let recovered = false;
+            if (deviceId) {
+              recovered = await activateDevice(deviceId, false, token);
+            }
+            if (!recovered) {
+              const reconnected = await reconnectDevice();
+              if (!reconnected) {
+                send({ type: 'error', error: 'no_device|Spotify device reconnection failed' });
+                return;
+              }
+            }
+            // Loop will retry with the (possibly new) deviceId
+            continue;
+          }
+
+          if (isLastAttempt) {
+            send({ type: 'error', error: 'playback|' + errMsg });
+            return;
+          }
+
+          // For other transient errors on non-last attempt, wait briefly and retry
+          send({ type: 'warning', warning: 'Spotify playback failed, retrying... (' + errMsg + ')' });
+          await new Promise((r) => setTimeout(r, 1000));
         }
       }
     }
@@ -314,8 +451,21 @@
       });
     }
 
-    function resume() {
+    async function resume() {
       if (!player) return;
+
+      // If the device is not ready, attempt to reconnect first.
+      if (!deviceId) {
+        const reconnected = await reconnectDevice();
+        if (!reconnected) return;
+      }
+
+      // Ensure the device is still active before resuming; Spotify may have
+      // deactivated it during a pause or after an error.
+      if (deviceId && spotifyToken) {
+        await activateDevice(deviceId, false, spotifyToken);
+      }
+
       player.getCurrentState().then((state) => {
         if (state && state.track_window && state.track_window.current_track) {
           player.resume();
@@ -338,6 +488,7 @@
       stopReportInterval();
       isPlaying = false;
       currentDuration = 0;
+      endedSent = false;
       currentTrackUri = null;
       send({ type: 'stopped' });
     }

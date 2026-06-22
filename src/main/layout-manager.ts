@@ -7,7 +7,7 @@
  *   Center panel: flexible     (DOM inside main view)
  *   Right panel : fixed 280px  (DOM top = members list, bottom = player WebContentsView)
  *   Bottom bar  : fixed 80px   (DOM inside main view — player controls)
- *   Top bar     : fixed 40px   (DOM inside main view — title/room ID)
+ *   Top bar     : fixed 64px   (DOM inside main view — workspace controls)
  *
  * The main WebContentsView covers the entire window content area.
  * The player WebContentsView sits on top of the right-panel bottom area.
@@ -19,14 +19,16 @@ import { BaseWindow, WebContentsView } from 'electron';
 
 const LEFT_PANEL_WIDTH = 240;
 const RIGHT_PANEL_WIDTH = 280;
-const TOP_BAR_HEIGHT = 40;
+const TOP_BAR_HEIGHT = 64;
 const BOTTOM_CONTROL_HEIGHT = 80;
-const MEMBERS_LIST_HEIGHT = 200; // Approximate; will be tuned in Phase 6
+// Room controls (190px) + member list (140px) in the right sidebar.
+const MEMBERS_LIST_HEIGHT = 330;
 
 export class LayoutManager {
   private win: BaseWindow;
   private mainView: WebContentsView;
   private playerView: WebContentsView;
+  private rightSidebarVisible = true;
   private resizeHandler = () => this.recalculate();
 
   constructor(win: BaseWindow, mainView: WebContentsView, playerView: WebContentsView) {
@@ -52,6 +54,13 @@ export class LayoutManager {
       height: contentHeight,
     });
 
+    if (!this.rightSidebarVisible) {
+      // WebContentsView is not part of the renderer DOM, so give it no visible
+      // bounds while the DOM sidebar is collapsed.
+      this.playerView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+      return;
+    }
+
     // Player view sits in the bottom-right panel region.
     // Coordinates may be refined once Phase 6 renderer HTML is finalized.
     const playerX = contentWidth - RIGHT_PANEL_WIDTH;
@@ -68,6 +77,11 @@ export class LayoutManager {
       width: playerWidth,
       height: playerHeight,
     });
+  }
+
+  setSidebarVisibility(_leftVisible: boolean, rightVisible: boolean): void {
+    this.rightSidebarVisible = rightVisible;
+    this.recalculate();
   }
 
   destroy(): void {

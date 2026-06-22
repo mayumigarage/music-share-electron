@@ -10,20 +10,8 @@ export class HistoryPanel {
   private listEl = document.getElementById('history-list') as HTMLElement;
 
   init(): void {
-    // Tab switching is handled by AppUI binding, but we need local listeners too
-    const tabs = document.querySelectorAll<HTMLElement>('#center-tabs .tab');
-    const queuePanel = document.getElementById('queue-panel') as HTMLElement;
-    const historyPanel = document.getElementById('history-panel') as HTMLElement;
-
-    tabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        tabs.forEach((t) => t.classList.remove('active'));
-        tab.classList.add('active');
-        const name = tab.dataset.tab;
-        queuePanel.style.display = name === 'queue' ? 'block' : 'none';
-        historyPanel.style.display = name === 'history' ? 'block' : 'none';
-      });
-    });
+    // Tab state is coordinated by AppUI because the center pane now also has
+    // a top-level playlist/shared-queue workspace switch.
   }
 
   setHistory(history: TrackHistory[]): void {

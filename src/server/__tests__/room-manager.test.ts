@@ -155,6 +155,7 @@ describe('RoomManager', () => {
       const track: Track = {
         id: 'track-1',
         url: 'https://youtube.com/watch?v=123',
+        resolvedVideoId: 'dQw4w9WgXcQ',
         title: 'Song',
         artist: 'Artist',
         thumbnailUrl: '',
@@ -176,11 +177,11 @@ describe('RoomManager', () => {
         maxGuests: 5,
       });
       const t1: Track = {
-        id: 't1', url: '', title: 'A', artist: '', thumbnailUrl: '',
+        id: 't1', url: '', resolvedVideoId: null, title: 'A', artist: '', thumbnailUrl: '',
         durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
       };
       const t2: Track = {
-        id: 't2', url: '', title: 'B', artist: '', thumbnailUrl: '',
+        id: 't2', url: '', resolvedVideoId: null, title: 'B', artist: '', thumbnailUrl: '',
         durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
       };
       manager.addTrack(room.id, t1);
@@ -197,7 +198,7 @@ describe('RoomManager', () => {
         maxGuests: 5,
       });
       const t1: Track = {
-        id: 't1', url: '', title: 'A', artist: '', thumbnailUrl: '',
+        id: 't1', url: '', resolvedVideoId: null, title: 'A', artist: '', thumbnailUrl: '',
         durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
       };
       manager.addTrack(room.id, t1);
@@ -213,7 +214,7 @@ describe('RoomManager', () => {
       });
       for (let i = 0; i < 105; i++) {
         const track: Track = {
-          id: `t${i}`, url: '', title: '', artist: '', thumbnailUrl: '',
+          id: `t${i}`, url: '', resolvedVideoId: null, title: '', artist: '', thumbnailUrl: '',
           durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
         };
         manager.addTrack(room.id, track);
@@ -252,11 +253,11 @@ describe('RoomManager', () => {
         maxGuests: 5,
       });
       const t1: Track = {
-        id: 't1', url: '', title: 'A', artist: '', thumbnailUrl: '',
+        id: 't1', url: '', resolvedVideoId: null, title: 'A', artist: '', thumbnailUrl: '',
         durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
       };
       const t2: Track = {
-        id: 't2', url: '', title: 'B', artist: '', thumbnailUrl: '',
+        id: 't2', url: '', resolvedVideoId: null, title: 'B', artist: '', thumbnailUrl: '',
         durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
       };
       manager.addTrack(room.id, t1);

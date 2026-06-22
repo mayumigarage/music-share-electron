@@ -1,6 +1,6 @@
 /**
  * MusicShare — Socket.IO Event Handlers
- * Phase 2: Room, queue, player, and WebRTC signaling handlers
+ * Phase 2: Room, queue, and player handlers
  */
 
 import { Server, Socket } from 'socket.io';
@@ -19,10 +19,7 @@ import {
   TrackFinishedPayload,
   RequestPlayPausePayload,
   RequestStopPayload,
-  SDPOfferPayload,
-  SDPAnswerPayload,
-  ICECandidatePayload,
-  RequestSDPOfferPayload,
+  RoomMode,
 } from '../shared/models';
 import { RoomManager } from './room-manager';
 
@@ -43,7 +40,7 @@ export function registerHandlers(
   io.on('connection', (socket: TypedSocket) => {
     // Room management
     socket.on('CreateRoom', (payload: CreateRoomPayload) => {
-      const result = roomManager.createRoom(payload);
+      const result = roomManager.createRoom({ ...payload, mode: RoomMode.Individual });
       socket.join(result.room.id);
       socketMeta.set(socket.id, { roomId: result.room.id, userId: result.user.id });
       userToSocket.set(result.user.id, socket.id);
@@ -71,6 +68,7 @@ export function registerHandlers(
       socket.leave(meta.roomId);
       userToSocket.delete(meta.userId);
       socketMeta.delete(socket.id);
+      socket.emit('RoomLeft', { roomId: meta.roomId, userId: meta.userId });
 
       if (room) {
         io.to(meta.roomId).emit('UserLeft', { roomId: meta.roomId, userId: meta.userId });
@@ -95,9 +93,13 @@ export function registerHandlers(
       const meta = socketMeta.get(socket.id);
       if (!meta) return;
 
+      const roomBeforeAdd = roomManager.getRoom(meta.roomId);
+      const addedBy = roomBeforeAdd?.users.find((user) => user.id === meta.userId)?.name;
+      if (!addedBy) return;
+
       const track = {
         ...payload.track,
-        addedBy: meta.userId,
+        addedBy,
       };
       const success = roomManager.addTrack(meta.roomId, track);
       if (!success) return;
@@ -215,58 +217,6 @@ export function registerHandlers(
           requestedByUserId: meta.userId,
         });
       }
-    });
-
-    // WebRTC signaling
-    socket.on('SDPOffer', (payload: SDPOfferPayload) => {
-      const targetSocketId = userToSocket.get(payload.targetUserId);
-      if (!targetSocketId) return;
-
-      const meta = socketMeta.get(socket.id);
-      if (!meta) return;
-
-      io.to(targetSocketId).emit('SDPOffer', {
-        fromUserId: meta.userId,
-        sdp: payload.sdp,
-      });
-    });
-
-    socket.on('SDPAnswer', (payload: SDPAnswerPayload) => {
-      const targetSocketId = userToSocket.get(payload.targetUserId);
-      if (!targetSocketId) return;
-
-      const meta = socketMeta.get(socket.id);
-      if (!meta) return;
-
-      io.to(targetSocketId).emit('SDPAnswer', {
-        fromUserId: meta.userId,
-        sdp: payload.sdp,
-      });
-    });
-
-    socket.on('ICECandidate', (payload: ICECandidatePayload) => {
-      const targetSocketId = userToSocket.get(payload.targetUserId);
-      if (!targetSocketId) return;
-
-      const meta = socketMeta.get(socket.id);
-      if (!meta) return;
-
-      io.to(targetSocketId).emit('ICECandidate', {
-        fromUserId: meta.userId,
-        candidate: payload.candidate,
-      });
-    });
-
-    socket.on('RequestSDPOffer', (payload: RequestSDPOfferPayload) => {
-      const targetSocketId = userToSocket.get(payload.targetUserId);
-      if (!targetSocketId) return;
-
-      const meta = socketMeta.get(socket.id);
-      if (!meta) return;
-
-      io.to(targetSocketId).emit('RequestSDPOffer', {
-        fromUserId: meta.userId,
-      });
     });
 
     // Disconnect cleanup

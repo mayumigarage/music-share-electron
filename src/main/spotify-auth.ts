@@ -8,13 +8,15 @@
  * - Exchange authorization code for tokens
  * - Refresh access tokens automatically
  * - Provide a valid access token on demand
- *
- * Tokens are kept in-memory only (no persistent storage in Phase 1).
+ * - Persist the refresh token securely using Electron safeStorage
  */
 
 import * as https from 'https';
 import * as crypto from 'crypto';
 import * as querystring from 'querystring';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app, safeStorage } from 'electron';
 import type { SpotifyTokenSet } from '../shared/models';
 
 // ---------------------------------------------------------------------------
@@ -29,10 +31,11 @@ const SCOPES = [
   'user-read-email',
   'user-read-private',
   'user-modify-playback-state',
+  'user-read-playback-state',
 ];
 
 /** Client ID is read from environment or falls back to a placeholder. */
-const CLIENT_ID = '72190d7b579948bbb311a6149a859902';
+const CLIENT_ID = '89117343229b4ba5935320d2fb41673d';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +109,19 @@ export class SpotifyAuthManager {
   private pendingAuthResolve: ((value: { success: boolean; error?: string }) => void) | null = null;
   /** Deduplicates concurrent refresh requests so only one HTTP call is made. */
   private refreshPromise: Promise<boolean> | null = null;
+  /** Whether stored tokens have been loaded from disk. */
+  private initialized = false;
+
+  /**
+   * Initialize the auth manager by loading any previously stored refresh token.
+   * Must be called after `app.whenReady()` because safeStorage is not available
+   * before the app is ready.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    await this.loadStoredTokens();
+    this.initialized = true;
+  }
 
   /**
    * Build the Spotify authorization URL and return it.
@@ -180,6 +196,7 @@ export class SpotifyAuthManager {
         expiresAt: Date.now() + data.expires_in * 1000,
       };
       this.codeVerifier = null;
+      await this.saveTokens();
 
       return { success: true };
     } catch (err) {
@@ -209,7 +226,7 @@ export class SpotifyAuthManager {
       if (statusCode < 200 || statusCode >= 300) {
         console.error('[SpotifyAuth] Refresh failed:', statusCode, body);
         // Clear tokens on persistent refresh failure so the UI can re-authenticate
-        this.tokenSet = null;
+        this.clearTokens();
         return false;
       }
 
@@ -222,11 +239,12 @@ export class SpotifyAuthManager {
         refreshToken: data.refresh_token || this.tokenSet.refreshToken,
         expiresAt: Date.now() + data.expires_in * 1000,
       };
+      await this.saveTokens();
 
       return true;
     } catch (err) {
       console.error('[SpotifyAuth] Refresh error:', err);
-      this.tokenSet = null;
+      this.clearTokens();
       return false;
     }
   }
@@ -269,5 +287,86 @@ export class SpotifyAuthManager {
   clearTokens(): void {
     this.tokenSet = null;
     this.codeVerifier = null;
+    this.clearStoredTokens();
+  }
+
+  /**
+   * Inject an access token directly (development/testing only).
+   * This bypasses the OAuth flow. The token is kept in-memory only.
+   */
+  injectToken(accessToken: string, expiresInSeconds = 3600): void {
+    this.tokenSet = {
+      accessToken,
+      refreshToken: '', // No refresh token for injected tokens
+      expiresAt: Date.now() + expiresInSeconds * 1000,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // SafeStorage persistence (private)
+  // -------------------------------------------------------------------------
+
+  private getTokenFilePath(): string {
+    return path.join(app.getPath('userData'), 'spotify-auth.json');
+  }
+
+  private async loadStoredTokens(): Promise<void> {
+    const tokenFile = this.getTokenFilePath();
+    if (!fs.existsSync(tokenFile)) {
+      return;
+    }
+
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('[SpotifyAuth] safeStorage encryption not available; skipping token load');
+        return;
+      }
+
+      const encrypted = fs.readFileSync(tokenFile);
+      const json = safeStorage.decryptString(encrypted);
+      const data = JSON.parse(json) as { refreshToken: string };
+
+      if (data.refreshToken) {
+        this.tokenSet = {
+          accessToken: '', // Will be refreshed on first use
+          refreshToken: data.refreshToken,
+          expiresAt: 0, // Force refresh on first use
+        };
+        console.log('[SpotifyAuth] Loaded stored refresh token');
+      }
+    } catch (err) {
+      console.error('[SpotifyAuth] Failed to load stored tokens:', err);
+      // Don't throw; just start unauthenticated
+    }
+  }
+
+  private async saveTokens(): Promise<void> {
+    if (!this.tokenSet?.refreshToken) {
+      return;
+    }
+
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('[SpotifyAuth] safeStorage encryption not available; skipping token save');
+        return;
+      }
+
+      const json = JSON.stringify({ refreshToken: this.tokenSet.refreshToken });
+      const encrypted = safeStorage.encryptString(json);
+      fs.writeFileSync(this.getTokenFilePath(), encrypted);
+    } catch (err) {
+      console.error('[SpotifyAuth] Failed to save tokens:', err);
+    }
+  }
+
+  private clearStoredTokens(): void {
+    try {
+      const tokenFile = this.getTokenFilePath();
+      if (fs.existsSync(tokenFile)) {
+        fs.unlinkSync(tokenFile);
+      }
+    } catch (err) {
+      console.error('[SpotifyAuth] Failed to clear stored tokens:', err);
+    }
   }
 }

@@ -11,10 +11,16 @@ import type {
   ElectronAPI,
   PlayerCommand,
   PlayerMessage,
-  TrackResolutionResult,
+  TrackResolverDebugLog,
+  TrackSearchResult,
+  YouTubeMusicCandidatesResult,
 } from '../shared/preload-api';
 
 const api: ElectronAPI = {
+  setSidebarVisibility: (leftVisible, rightVisible) => {
+    return ipcRenderer.invoke('set-sidebar-visibility', leftVisible, rightVisible) as Promise<void>;
+  },
+
   /**
    * Subscribe to player messages relayed from the WebContentsView.
    * Returns an unsubscribe function.
@@ -49,15 +55,35 @@ const api: ElectronAPI = {
   /**
    * Resolve a track URL to its metadata (runs in main process to avoid CORS).
    */
-  resolveTrack: (url: string) => {
-    return ipcRenderer.invoke('resolve-track', url) as Promise<TrackResolutionResult>;
+  resolveTrack: (url: string, options) => {
+    return ipcRenderer.invoke('resolve-track', url, options) as Promise<TrackSearchResult>;
   },
 
-  /**
-   * Convert a Spotify track URL to an equivalent YouTube watch URL.
-   */
-  convertSpotifyToYouTube: (url: string) => {
-    return ipcRenderer.invoke('convert-spotify-to-youtube', url) as Promise<string | null>;
+  /** Subscribe to real-time track-resolution diagnostics from Main. */
+  onTrackResolverDebug: (callback) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      log: TrackResolverDebugLog,
+    ) => {
+      callback(log);
+    };
+    ipcRenderer.on('track-resolver-debug', handler);
+    return () => {
+      ipcRenderer.removeListener('track-resolver-debug', handler);
+    };
+  },
+
+  onYouTubeMusicCandidates: (callback) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      result: YouTubeMusicCandidatesResult,
+    ) => {
+      callback(result);
+    };
+    ipcRenderer.on('youtube-music-candidates', handler);
+    return () => {
+      ipcRenderer.removeListener('youtube-music-candidates', handler);
+    };
   },
 
   /**
@@ -72,35 +98,6 @@ const api: ElectronAPI = {
    */
   showErrorDialog: (title: string, message: string) => {
     ipcRenderer.invoke('show-error-dialog', title, message);
-  },
-
-  /**
-   * Get the desktop audio source ID for the MusicShare window.
-   */
-  getDesktopAudioSource: () => {
-    return ipcRenderer.invoke('get-desktop-audio-source') as Promise<
-      { id: string; name: string } | null
-    >;
-  },
-
-  /**
-   * Send a WebRTC signaling message to the player WebContentsView.
-   */
-  sendPlayerSignaling: (payload: unknown) => {
-    ipcRenderer.send('send-player-signaling', payload);
-  },
-
-  /**
-   * Subscribe to WebRTC signaling messages from the player WebContentsView.
-   */
-  onPlayerSignaling: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-      callback(payload);
-    };
-    ipcRenderer.on('player-signaling', handler);
-    return () => {
-      ipcRenderer.removeListener('player-signaling', handler);
-    };
   },
 
   /**
@@ -131,6 +128,20 @@ const api: ElectronAPI = {
    */
   getSpotifyToken: () => {
     return ipcRenderer.invoke('get-spotify-token') as Promise<string | null>;
+  },
+
+  /**
+   * Manually inject a Spotify access token (development/testing only).
+   */
+  setSpotifyToken: (token: string) => {
+    return ipcRenderer.invoke('set-spotify-token', token) as Promise<void>;
+  },
+
+  /**
+   * Clear the Spotify authentication tokens (logout).
+   */
+  clearSpotifyAuth: () => {
+    return ipcRenderer.invoke('clear-spotify-auth') as Promise<void>;
   },
 };
 

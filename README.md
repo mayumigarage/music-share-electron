@@ -1,11 +1,14 @@
 # MusicShare
 
-複数人で同期して音楽を聴くことができる Electron + TypeScript アプリケーションです。YouTube・Spotify・Apple Music の URL をキューに追加し、ホスト配信（WebRTC P2P）または個別再生モードで楽曲を共有できます。
+複数人で同期して音楽を聴くことができる Electron + TypeScript アプリケーションです。YouTube・Spotify・Apple Music の URL を共有キューに追加し、各参加者のプレイヤーを同期して楽曲を共有できます。
+
+Spotify／Apple Music の曲は、追加時に元サービスの曲名・アーティスト・ジャケットを取得し、`yt-dlp` で YouTube Music の再生候補を検索します。再生には常に YouTube プレイヤーを使用しますが、キュー上のサービス表示と元リンクは維持されます。
 
 ## 必要条件
 
 - [Node.js](https://nodejs.org/) 18 以上
 - npm（Node.js に同梱）
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)（Spotify／Apple Music 等のリンクを再生するために必須）
 - Windows 10/11（開発・実行ともに対応）
 
 ## インストール
@@ -14,15 +17,33 @@
 npm install
 ```
 
+### yt-dlp をインストールする
+
+`yt-dlp` は Node.js の依存パッケージではなく、OS のコマンドとしてインストールします。PowerShell を開き、次のいずれかで導入してください。
+
+```powershell
+# winget を使う場合
+winget install yt-dlp.yt-dlp
+
+# Python/pip を使う場合
+py -m pip install -U yt-dlp
+```
+
+インストール後、**新しい PowerShell** で以下が成功すれば準備完了です。
+
+```powershell
+yt-dlp --version
+```
+
 ## 使い方
 
-### 1. サーバーを起動する
+### 1. Socket.IO サーバーを起動する
 
 ```bash
 npm run server
 ```
 
-Socket.IO サーバーが `ws://localhost:5000` で起動します。
+Socket.IO サーバーが `ws://localhost:5000` で起動します。このターミナルは開いたままにします。
 
 ### 2. Electron アプリを起動する
 
@@ -32,7 +53,16 @@ Socket.IO サーバーが `ws://localhost:5000` で起動します。
 npm start
 ```
 
+Electron は起動時にプレイヤー用のローカル HTTP サーバーも自動で起動します。別途起動する必要はありません。
+
 アプリが起動したら、ルーム作成モーダルで「ホスト配信」または「個別再生」を選び、ルームを作成します。他のユーザーは Room ID を入力して参加できます。
+
+### 3. 曲を追加する
+
+1. 「曲を追加」から YouTube、Spotify、または Apple Music の曲 URL を入力します。
+2. 「URL を解析」を押します。
+3. Spotify／Apple Music の場合、元サービスのメタデータを表示したまま、バックグラウンドで `yt-dlp` が YouTube Music の動画 ID を解決します。
+4. プレビューを確認してキューへ追加します。再生時はサービスにかかわらず YouTube プレイヤーで再生されます。
 
 ## スクリプト一覧
 
@@ -103,18 +133,21 @@ Jest を使用したサーバー側の単体テストが実行されます：
 - `npm run server` でサーバーが起動しているか確認してください。
 - ファイアウォールでポート 5000 がブロックされていないか確認してください。
 
-### WebRTC（ホスト配信）で音声が届かない
+### Spotify／Apple Music の URL を解析できない
 
-- ホスト側で `getDisplayMedia` の音声キャプチャ許可ダイアログが表示されたか確認してください。
-- ゲスト側のブラウザ / Electron で `<audio>` 要素が mute になっていないか確認してください。
-- ネットワークが対称型 NAT（Symmetric NAT）の場合、STUN サーバー（`stun:stun.l.google.com:19302`）だけでは P2P 接続が確立できないことがあります。
+- `yt-dlp --version` を実行し、`yt-dlp` が PATH から起動できることを確認してください。`yt-dlp` をインストールした直後は、Electron とターミナルを一度閉じて開き直してください。
+- ネットワークから YouTube へ接続できるか確認してください。
+- `yt-dlp` を最新版へ更新してください。
+
+  ```powershell
+  py -m pip install -U yt-dlp
+  ```
 
 ## 技術スタック
 
 - **Main Process**: Electron + TypeScript
 - **Renderer Process**: TypeScript + 純正 HTML/CSS/JS
 - **Server**: Node.js + TypeScript + Socket.IO
-- **P2P 音声**: WebRTC (`RTCPeerConnection` + `getDisplayMedia`)
 
 ## ライセンス
 

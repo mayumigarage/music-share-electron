@@ -138,6 +138,7 @@
       }
       try {
         player.loadVideoById(videoId);
+        send({ type: 'loaded', uri: url });
       } catch (e) {
         send({ type: 'error', error: 'load_failed|' + videoId + '|' + (e && e.message) });
       }

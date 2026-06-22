@@ -11,16 +11,19 @@ import { QueuePanel } from './queue-panel.js';
 import { HistoryPanel } from './history-panel.js';
 import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
-import { RoomModal } from './room-modal.js';
 import { SettingsModal } from './settings-modal.js';
+import { FavoritesStore } from './favorites-store.js';
+import { RoomMode } from '../../shared/models.js';
 import type {
   Room,
   User,
   Track,
   PlayerState,
   TrackHistory,
-  RoomMode,
 } from '../../shared/models.js';
+
+type Workspace = 'playlist' | 'queue';
+type CenterTab = 'queue' | 'history' | 'search';
 
 export class AppUI {
   private playlistPanel: PlaylistPanel;
@@ -28,28 +31,34 @@ export class AppUI {
   private historyPanel: HistoryPanel;
   private membersPanel: MembersPanel;
   private playerControl: PlayerControl;
-  private roomModal: RoomModal;
   private settingsModal: SettingsModal;
+  private favoritesStore = new FavoritesStore();
 
   private currentRoom: Room | null = null;
   private currentUser: User | null = null;
   private isSpotifyAuthenticated = false;
   private showSpotifyAuthRequested = false;
 
-  // Debounce rapid consecutive player errors to prevent infinite skip loops
-  private lastPlayerErrorAt = 0;
-  private playerErrorCount = 0;
-
   // DOM refs
-  private roomInfo = document.getElementById('room-info') as HTMLElement;
-  private roomIdDisplay = document.getElementById('room-id-display') as HTMLElement;
-  private roomModeDisplay = document.getElementById('room-mode-display') as HTMLElement;
   private toastContainer = document.getElementById('toast-container') as HTMLElement;
-  private topBarBrand = document.querySelector('#top-bar .brand') as HTMLElement;
   private spotifyAuthBanner = document.getElementById('spotify-auth-banner') as HTMLElement;
   private spotifyAuthLabel = document.getElementById('spotify-auth-label') as HTMLElement;
   private spotifyAuthStatus = document.getElementById('spotify-auth-status') as HTMLElement;
   private btnSpotifyLogin = document.getElementById('btn-spotify-login') as HTMLButtonElement;
+  private playlistCenterPanel = document.getElementById('playlist-center-panel') as HTMLElement;
+  private sharedCenterPanel = document.getElementById('shared-center-panel') as HTMLElement;
+  private playlistCenterTitle = document.getElementById('playlist-center-title') as HTMLElement;
+  private playlistHeroCover = document.getElementById('playlist-hero-cover') as HTMLElement;
+  private sidebarRoomName = document.getElementById('sidebar-room-name') as HTMLElement;
+  private sidebarRoomId = document.getElementById('sidebar-room-id') as HTMLElement;
+  private btnCopyRoomId = document.getElementById('btn-copy-room-id') as HTMLButtonElement;
+  private btnLeaveRoom = document.getElementById('btn-leave-room') as HTMLButtonElement;
+  private roomEntry = document.getElementById('room-entry') as HTMLElement;
+  private roomDetails = document.getElementById('room-details') as HTMLElement;
+  private appLayout = document.getElementById('app-layout') as HTMLElement;
+  private isLeftSidebarVisible = true;
+  private isRightSidebarVisible = true;
+  private selectedPlaylistId = 'favorites';
 
   constructor(
     private wsClient: WebSocketClient,
@@ -57,36 +66,74 @@ export class AppUI {
     private playerProxy: PlayerProxy,
   ) {
     this.playlistPanel = new PlaylistPanel();
-    this.queuePanel = new QueuePanel(wsClient, this.showToast.bind(this));
+    this.queuePanel = new QueuePanel(
+      wsClient,
+      this.showToast.bind(this),
+      this.favoritesStore,
+      this.renderFavoritePlaylist.bind(this),
+    );
     this.historyPanel = new HistoryPanel();
     this.membersPanel = new MembersPanel();
     this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine);
-    this.roomModal = new RoomModal(wsClient);
     this.settingsModal = new SettingsModal();
   }
 
   async init(): Promise<void> {
+    // Keep this in the renderer so logs appear in the detached DevTools Console.
+    // Code points make mojibake distinguishable from a DevTools display issue.
+    window.electronAPI.onTrackResolverDebug((log) => {
+      if (log.stage === 'spotify-web-api') {
+        console.log(`[TrackResolver][${log.stage}]`, {
+          sourceUrl: log.sourceUrl,
+          title: log.title,
+          artist: log.artist,
+          details: log.details,
+        });
+        return;
+      }
+
+      if (log.stage === 'spotify-metadata') {
+        console.log('[TrackResolver][Spotify metadata]', {
+          sourceUrl: log.sourceUrl,
+          title: log.title,
+          artist: log.artist,
+          titleCodePoints: log.titleCodePoints,
+          artistCodePoints: log.artistCodePoints,
+        });
+        return;
+      }
+
+      console.log('[TrackResolver][yt-dlp command]', {
+        sourceUrl: log.sourceUrl,
+        candidate: log.candidateType,
+        searchQuery: log.searchQuery,
+        // execFile passes an argv array (not a shell command string), so this
+        // is the exact argument sequence delivered to yt-dlp.
+        command: ['yt-dlp', ...(log.ytDlpArgs || [])],
+      });
+    });
+
     this.bindGlobalEvents();
     this.bindTopBar();
+    this.bindRightSidebar();
+    this.bindSidebarToggles();
 
     this.playlistPanel.init();
     this.queuePanel.init();
     this.historyPanel.init();
     this.membersPanel.init();
     this.playerControl.init();
-    this.roomModal.init();
     this.settingsModal.init();
+    this.renderFavoritePlaylist();
 
     this.wsClient.onRoomCreated = (room, user) => this.handleRoomJoined(room, user);
     this.wsClient.onRoomJoined = (room, user) => this.handleRoomJoined(room, user);
     this.wsClient.onRoomLeft = () => this.handleRoomLeft();
     this.wsClient.onUserJoined = (user) => {
       this.membersPanel.addMember(user);
-      this.syncEngine.handleUserJoined(user);
     };
     this.wsClient.onUserLeft = (userId) => {
       this.membersPanel.removeMember(userId);
-      this.syncEngine.handleUserLeft(userId);
     };
     this.wsClient.onHostTransferred = (newHostId) => this.handleHostTransferred(newHostId);
     this.wsClient.onQueueUpdated = (queue) => this.queuePanel.setQueue(queue);
@@ -98,6 +145,9 @@ export class AppUI {
       this.handlePlayerStateUpdated(state);
       this.syncEngine.handlePlayerStateUpdated(state);
     };
+    this.syncEngine.onHostPlayerStateObserved = (state) => {
+      this.handlePlayerStateUpdated(state);
+    };
     this.wsClient.onError = (code, message) => {
       if (code === 'JOIN_FAILED') {
         this.showToast('ルームに参加できませんでした', 'error');
@@ -106,49 +156,15 @@ export class AppUI {
       this.showToast(message, 'error');
     };
 
-    // WebRTC guest-limit toast
-    this.syncEngine.onGuestLimitReached = () => {
-      this.showToast('ホスト配信の接続数上限に達しました（最大5人）', 'error');
-    };
-
-    // Player error (e.g. YT 153, Spotify playback failure) — skip to next track on host
+    // Player error (e.g. YT 153, Spotify playback failure). Skip/retry policy
+    // is centralized in SyncEngine so it can use the authoritative track state.
     this.syncEngine.onPlayerError = (errorDetail) => {
-      const now = Date.now();
-      if (now - this.lastPlayerErrorAt < 8000) {
-        this.playerErrorCount++;
-      } else {
-        this.playerErrorCount = 1;
-      }
-      this.lastPlayerErrorAt = now;
-
       console.error('[AppUI] Player error detail:', errorDetail);
-
       const friendlyMessage = this.resolveSpotifyErrorMessage(errorDetail);
-
-      // If we've errored 3+ times within 8 seconds, stop instead of looping forever
-      if (this.playerErrorCount >= 3) {
-        this.showToast(friendlyMessage || '複数の曲が再生できません。再生を停止します。', 'error');
-        if (this.currentRoom && this.currentUser?.id === this.currentRoom.hostId) {
-          this.playerProxy.stop();
-          this.currentRoom.playerState.isPlaying = false;
-          this.currentRoom.playerState.positionSeconds = 0;
-          this.syncEngine.broadcastPlayerState();
-        }
-        return;
-      }
-
-      this.showToast(friendlyMessage || 'この曲は再生できません。次の曲にスキップします。', 'error');
-      if (this.currentRoom && this.currentUser?.id === this.currentRoom.hostId) {
-        const currentTrackId = this.currentRoom.playerState.currentTrack?.id;
-        if (currentTrackId) {
-          this.wsClient.trackFinished(currentTrackId);
-        }
-      }
+      this.showToast(friendlyMessage || '再生中にエラーが発生しました。', 'error');
     };
 
     this.bindSpotifyAuth();
-    // Show room modal immediately on launch
-    this.roomModal.open();
   }
 
   private bindSpotifyAuth(): void {
@@ -269,6 +285,13 @@ export class AppUI {
       if (menu && !menu.contains(e.target as Node)) {
         menu.style.display = 'none';
       }
+
+      const sortMenu = document.getElementById('sort-menu');
+      const sortWrapper = document.querySelector('.sort-wrapper');
+      if (sortMenu && !sortWrapper?.contains(e.target as Node)) {
+        sortMenu.classList.remove('open');
+        document.getElementById('btn-sort')?.setAttribute('aria-expanded', 'false');
+      }
     });
 
     // Keyboard shortcuts
@@ -281,17 +304,242 @@ export class AppUI {
   }
 
   private bindTopBar(): void {
-    this.topBarBrand.addEventListener('click', () => {
-      if (this.currentRoom) {
-        this.showToast(`Room ID: ${this.currentRoom.id} (クリップボードにコピー)`, 'info');
-        navigator.clipboard.writeText(this.currentRoom.id).catch(() => void 0);
-      }
-    });
-
     const settingsBtn = document.getElementById('btn-settings');
     settingsBtn?.addEventListener('click', () => {
       this.settingsModal.open();
     });
+
+    document.querySelectorAll<HTMLButtonElement>('.workspace-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const workspace = tab.dataset.workspace;
+        if (workspace === 'playlist' || workspace === 'queue') {
+          this.setWorkspace(workspace);
+        }
+      });
+    });
+
+    document.getElementById('btn-header-add-track')?.addEventListener('click', () => {
+      this.queuePanel.openAddModal();
+    });
+
+    const sortButton = document.getElementById('btn-sort') as HTMLButtonElement | null;
+    const sortMenu = document.getElementById('sort-menu');
+    sortButton?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const isOpen = sortMenu?.classList.toggle('open') ?? false;
+      sortButton.setAttribute('aria-expanded', String(isOpen));
+    });
+
+    sortMenu?.querySelectorAll<HTMLButtonElement>('[data-sort]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const sort = item.dataset.sort;
+        if (sort === 'title-asc' || sort === 'title-desc' || sort === 'duration-asc' || sort === 'duration-desc') {
+          this.queuePanel.sortQueue(sort);
+          this.showToast('共有キューの並び順を更新しました', 'success');
+        }
+        sortMenu?.classList.remove('open');
+        sortButton?.setAttribute('aria-expanded', 'false');
+      });
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('#center-tabs .tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const name = tab.dataset.tab;
+        if (name === 'queue' || name === 'history' || name === 'search') {
+          this.setCenterTab(name);
+        }
+      });
+    });
+
+    window.addEventListener('musicshare:playlist-selected', (event) => {
+      const { id, name, cover } = (event as CustomEvent<{ id: string; name: string; cover: string }>).detail;
+      this.selectedPlaylistId = id;
+      this.playlistCenterTitle.textContent = name;
+      this.playlistHeroCover.textContent = cover;
+      if (id === 'favorites') {
+        this.renderFavoritePlaylist();
+      }
+      this.setWorkspace('playlist');
+    });
+  }
+
+  private renderFavoritePlaylist(): void {
+    if (this.selectedPlaylistId !== 'favorites') return;
+    const list = document.getElementById('favorite-playlist-list') as HTMLElement;
+    const favorites = this.favoritesStore.getTracks();
+    list.innerHTML = '';
+
+    if (favorites.length === 0) {
+      list.innerHTML = '<div class="empty-state">お気に入りに追加した曲はここに表示されます</div>';
+      return;
+    }
+
+    favorites.forEach((track) => {
+      const item = document.createElement('div');
+      item.className = 'track-item';
+
+      const thumb = document.createElement('img');
+      thumb.className = 'track-thumb';
+      thumb.src = track.thumbnailUrl || '';
+      thumb.alt = '';
+
+      const info = document.createElement('div');
+      info.className = 'track-info';
+      const title = document.createElement('div');
+      title.className = 'track-title';
+      title.textContent = track.title;
+      const artist = document.createElement('div');
+      artist.className = 'track-meta';
+      artist.textContent = track.artist;
+      info.append(title, artist);
+
+      const favoriteBtn = document.createElement('button');
+      favoriteBtn.className = 'track-favorite is-favorite';
+      favoriteBtn.textContent = '★';
+      favoriteBtn.title = 'お気に入りから削除';
+      favoriteBtn.setAttribute('aria-label', favoriteBtn.title);
+      favoriteBtn.addEventListener('click', () => {
+        this.favoritesStore.toggle(track);
+        this.renderFavoritePlaylist();
+      });
+
+      item.append(thumb, info, favoriteBtn);
+      list.appendChild(item);
+    });
+  }
+
+  private bindRightSidebar(): void {
+    const createModeButton = document.getElementById('btn-room-create-mode') as HTMLButtonElement;
+    const joinModeButton = document.getElementById('btn-room-join-mode') as HTMLButtonElement;
+    const createForm = document.getElementById('room-create-form-sidebar') as HTMLFormElement;
+    const joinForm = document.getElementById('room-join-form-sidebar') as HTMLFormElement;
+
+    const setRoomEntryMode = (mode: 'create' | 'join') => {
+      const isCreate = mode === 'create';
+      createModeButton.classList.toggle('active', isCreate);
+      joinModeButton.classList.toggle('active', !isCreate);
+      createForm.style.display = isCreate ? 'flex' : 'none';
+      joinForm.style.display = isCreate ? 'none' : 'flex';
+    };
+    createModeButton.addEventListener('click', () => setRoomEntryMode('create'));
+    joinModeButton.addEventListener('click', () => setRoomEntryMode('join'));
+
+    createForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const roomName = (document.getElementById('input-sidebar-room-name') as HTMLInputElement).value.trim();
+      const userName = (document.getElementById('input-sidebar-user-name-create') as HTMLInputElement).value.trim();
+      if (!roomName || !userName) {
+        this.showToast('ルーム名とあなたの名前を入力してください', 'error');
+        return;
+      }
+      this.wsClient.createRoom(roomName, userName, RoomMode.Individual);
+    });
+
+    joinForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const roomId = (document.getElementById('input-sidebar-room-id') as HTMLInputElement).value.trim();
+      const userName = (document.getElementById('input-sidebar-user-name-join') as HTMLInputElement).value.trim();
+      if (!roomId || !userName) {
+        this.showToast('ルームIDとあなたの名前を入力してください', 'error');
+        return;
+      }
+      this.wsClient.joinRoom(roomId, userName);
+    });
+
+    this.btnCopyRoomId.addEventListener('click', () => {
+      if (!this.currentRoom) return;
+      navigator.clipboard.writeText(this.currentRoom.id)
+        .then(() => this.showToast('ルームIDをコピーしました', 'success'))
+        .catch(() => this.showToast('ルームIDをコピーできませんでした', 'error'));
+    });
+
+    const leaveRoom = () => {
+      if (!this.currentRoom) return;
+      this.wsClient.leaveRoom();
+    };
+    this.btnLeaveRoom.addEventListener('click', leaveRoom);
+  }
+
+  private bindSidebarToggles(): void {
+    const leftButton = document.getElementById('btn-toggle-left-sidebar') as HTMLButtonElement;
+    const rightButton = document.getElementById('btn-toggle-right-sidebar') as HTMLButtonElement;
+
+    leftButton.addEventListener('click', () => {
+      this.isLeftSidebarVisible = !this.isLeftSidebarVisible;
+      this.updateSidebarVisibility();
+    });
+    rightButton.addEventListener('click', () => {
+      this.isRightSidebarVisible = !this.isRightSidebarVisible;
+      this.updateSidebarVisibility();
+    });
+  }
+
+  private updateSidebarVisibility(): void {
+    this.appLayout.classList.toggle('left-collapsed', !this.isLeftSidebarVisible);
+    this.appLayout.classList.toggle('right-collapsed', !this.isRightSidebarVisible);
+
+    this.updateSidebarToggleButton(
+      'btn-toggle-left-sidebar',
+      this.isLeftSidebarVisible,
+      '左サイドバー',
+      '◀',
+      '▶',
+    );
+    this.updateSidebarToggleButton(
+      'btn-toggle-right-sidebar',
+      this.isRightSidebarVisible,
+      '右サイドバー',
+      '▶',
+      '◀',
+    );
+
+    window.electronAPI.setSidebarVisibility(this.isLeftSidebarVisible, this.isRightSidebarVisible)
+      .catch(() => this.showToast('サイドバーの表示を更新できませんでした', 'error'));
+  }
+
+  private updateSidebarToggleButton(
+    id: string,
+    isVisible: boolean,
+    label: string,
+    visibleIcon: string,
+    hiddenIcon: string,
+  ): void {
+    const button = document.getElementById(id) as HTMLButtonElement;
+    const action = isVisible ? '閉じる' : '開く';
+    button.textContent = isVisible ? visibleIcon : hiddenIcon;
+    button.title = `${label}を${action}`;
+    button.setAttribute('aria-label', `${label}を${action}`);
+    button.setAttribute('aria-expanded', String(isVisible));
+  }
+
+  private setWorkspace(workspace: Workspace): void {
+    const isPlaylist = workspace === 'playlist';
+    this.playlistCenterPanel.style.display = isPlaylist ? 'block' : 'none';
+    this.sharedCenterPanel.style.display = isPlaylist ? 'none' : 'block';
+
+    document.querySelectorAll<HTMLButtonElement>('.workspace-tab').forEach((tab) => {
+      const active = tab.dataset.workspace === workspace;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+
+    const sortButton = document.getElementById('btn-sort') as HTMLButtonElement | null;
+    if (sortButton) {
+      sortButton.disabled = isPlaylist;
+      sortButton.title = isPlaylist ? '共有楽曲キューで並び替えできます' : '共有キューを並び替える';
+    }
+    if (isPlaylist) {
+      document.getElementById('sort-menu')?.classList.remove('open');
+    }
+  }
+
+  private setCenterTab(tabName: CenterTab): void {
+    document.querySelectorAll<HTMLButtonElement>('#center-tabs .tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.tab === tabName);
+    });
+    (document.getElementById('queue-panel') as HTMLElement).style.display = tabName === 'queue' ? 'block' : 'none';
+    (document.getElementById('history-panel') as HTMLElement).style.display = tabName === 'history' ? 'block' : 'none';
+    (document.getElementById('search-panel') as HTMLElement).style.display = tabName === 'search' ? 'block' : 'none';
   }
 
   private handleRoomJoined(room: Room, user: User): void {
@@ -299,9 +547,12 @@ export class AppUI {
     this.currentUser = user;
     this.syncEngine.setRoom(room, user);
 
-    this.roomInfo.style.display = 'flex';
-    this.roomIdDisplay.textContent = room.id;
-    this.roomModeDisplay.textContent = room.mode === 'HostBroadcast' ? 'ホスト配信' : '個別再生';
+    this.sidebarRoomName.textContent = room.name;
+    this.sidebarRoomId.textContent = room.id;
+    this.roomEntry.style.display = 'none';
+    this.roomDetails.style.display = 'flex';
+    this.btnCopyRoomId.disabled = false;
+    this.btnLeaveRoom.disabled = false;
 
     this.queuePanel.setQueue(room.queue);
     this.historyPanel.setHistory(room.history);
@@ -318,15 +569,18 @@ export class AppUI {
     this.currentUser = null;
     this.syncEngine.setRoom(null, null);
 
-    this.roomInfo.style.display = 'none';
-    this.roomIdDisplay.textContent = '';
+    this.sidebarRoomName.textContent = 'ルーム';
+    this.sidebarRoomId.textContent = '------';
+    this.roomEntry.style.display = 'block';
+    this.roomDetails.style.display = 'none';
+    this.btnCopyRoomId.disabled = true;
+    this.btnLeaveRoom.disabled = true;
     this.queuePanel.setQueue([]);
     this.historyPanel.setHistory([]);
     this.membersPanel.setMembers([], '');
     this.playerControl.setRoom(null, null);
 
     this.showToast('ルームから退出しました', 'info');
-    this.roomModal.open();
   }
 
   private handleHostTransferred(newHostId: string): void {

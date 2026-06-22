@@ -7,18 +7,16 @@
 import { WebContentsView, ipcMain, View } from 'electron';
 import * as path from 'path';
 import type { PlayerCommand, PlayerMessage } from '../shared/preload-api';
-import { MusicServiceType } from '../shared/models';
 import { getPlayerUrl } from './asset-path';
 
 export class PlayerBridge {
   private view: WebContentsView;
   private parentView: View;
   private messageCallback?: (msg: PlayerMessage) => void;
-  private signalingCallback?: (payload: unknown) => void;
   private isReady = false;
   private readyResolvers: Array<() => void> = [];
 
-  constructor(parentView: View, service: MusicServiceType, playerServerUrl: string) {
+  constructor(parentView: View, playerServerUrl: string) {
     this.parentView = parentView;
 
     const playerPreloadPath = path.join(__dirname, '../preload/player-preload.js');
@@ -29,16 +27,12 @@ export class PlayerBridge {
         nodeIntegration: false,
         sandbox: true,
         preload: playerPreloadPath,
-        // Required for EME / Widevine CDM (Spotify Web Playback SDK).
-        // NOTE: Electron standard builds may lack the Widevine CDM binaries,
-        // so playback can still fail. The initialization_error listener in
-        // PlayerProxy logs the exact SDK error for diagnosis.
-        plugins: true,
       },
     });
 
-    // Load the appropriate player wrapper HTML via local asset server
-    const playerUrl = getPlayerUrl(service, playerServerUrl);
+    // Playback is always delegated to the YouTube wrapper. Source-service
+    // metadata stays on Track for the renderer to display.
+    const playerUrl = getPlayerUrl('youtube', playerServerUrl);
     this.view.webContents.loadURL(playerUrl);
 
     // Attach to the parent view (BaseWindow.contentView)
@@ -46,8 +40,6 @@ export class PlayerBridge {
 
     // Listen for player messages relayed via preload script
     ipcMain.on('player-message', this.onIpcMessage);
-    // Phase 6.2: Listen for WebRTC signaling messages from the player preload
-    ipcMain.on('player-signaling-out', this.onIpcSignalingMessage);
   }
 
   private onIpcMessage = (event: Electron.IpcMainEvent, data: unknown) => {
@@ -63,24 +55,11 @@ export class PlayerBridge {
     this.messageCallback?.(msg);
   };
 
-  private onIpcSignalingMessage = (event: Electron.IpcMainEvent, data: unknown) => {
-    // Ensure the signaling message originated from this bridge's view
-    if (event.sender !== this.view.webContents) return;
-    this.signalingCallback?.(data);
-  };
-
   /**
    * Subscribe to messages originating from the player HTML.
    */
   onPlayerMessage(callback: (msg: PlayerMessage) => void): void {
     this.messageCallback = callback;
-  }
-
-  /**
-   * Subscribe to WebRTC signaling messages originating from the player preload.
-   */
-  onPlayerSignaling(callback: (payload: unknown) => void): void {
-    this.signalingCallback = callback;
   }
 
   /**
@@ -94,14 +73,6 @@ export class PlayerBridge {
   }
 
   /**
-   * Send a WebRTC signaling message into the player preload.
-   */
-  sendSignaling(payload: unknown): void {
-    if (this.view.webContents.isDestroyed()) return;
-    this.view.webContents.send('player-signaling-in', payload);
-  }
-
-  /**
    * Send a command to the player by executing its global functions.
    */
   async sendCommand(command: PlayerCommand): Promise<void> {
@@ -111,7 +82,7 @@ export class PlayerBridge {
     switch (command.type) {
       case 'loadTrack': {
         await wc.executeJavaScript(
-          `if (typeof playTrack === 'function') playTrack(${JSON.stringify(command.url)});`,
+          `if (typeof playTrack === 'function') playTrack(${JSON.stringify(command.resolvedVideoId)});`,
           true,
         );
         break;
@@ -173,7 +144,6 @@ export class PlayerBridge {
   dispose(): void {
     // Remove IPC listeners first
     ipcMain.removeListener('player-message', this.onIpcMessage);
-    ipcMain.removeListener('player-signaling-out', this.onIpcSignalingMessage);
 
     // Remove from parent view hierarchy
     try {

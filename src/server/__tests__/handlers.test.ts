@@ -98,6 +98,7 @@ describe('Socket.IO Handlers', () => {
 
       clientSocket.once('TrackAdded', (trackPayload) => {
         expect(trackPayload.track.title).toBe('My Song');
+        expect(trackPayload.track.addedBy).toBe('Alice');
         done();
       });
 
@@ -120,42 +121,6 @@ describe('Socket.IO Handlers', () => {
       userName: 'Alice',
       mode: RoomMode.Individual,
       maxGuests: 5,
-    });
-  });
-
-  it('relays SDPOffer to target user', (done) => {
-    const port = (httpServer.address() as { port: number }).port;
-    const client2 = Client(`http://localhost:${port}`);
-
-    client2.on('connect', () => {
-      clientSocket.once('RoomCreated', (payload1) => {
-        client2.emit('JoinRoom', {
-          roomId: payload1.room.id,
-          userName: 'Bob',
-        });
-      });
-
-      client2.once('RoomJoined', (payload2) => {
-        client2.once('SDPOffer', (offer) => {
-          expect(offer.fromUserId).toBeDefined();
-          expect(offer.sdp).toBeDefined();
-          client2.close();
-          done();
-        });
-
-        clientSocket.emit('SDPOffer', {
-          roomId: payload2.room.id,
-          targetUserId: payload2.user.id,
-          sdp: { type: 'offer', sdp: 'fake-sdp' },
-        });
-      });
-
-      clientSocket.emit('CreateRoom', {
-        roomName: 'Relay Test',
-        userName: 'Alice',
-        mode: RoomMode.Individual,
-        maxGuests: 5,
-      });
     });
   });
 

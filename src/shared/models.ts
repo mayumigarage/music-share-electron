@@ -18,8 +18,6 @@ export enum MusicServiceType {
 export enum RoomMode {
   /** Each user controls their own playback */
   Individual = 'Individual',
-  /** Host audio is streamed to guests via WebRTC P2P */
-  HostBroadcast = 'HostBroadcast',
 }
 
 // ============================================================================
@@ -29,13 +27,17 @@ export enum RoomMode {
 /** Represents a track in the system */
 export interface Track {
   id: string;
+  /** Source URL supplied by the user. Kept for service-specific UI and opening the original link. */
   url: string;
+  /** YouTube/YouTube Music video selected for playback, or null when resolution failed. */
+  resolvedVideoId: string | null;
   title: string;
   artist: string;
   thumbnailUrl: string;
   /** Can be null for live streams or when duration is unknown */
   durationSeconds: number | null;
-  addedBy: string; // User ID
+  /** Display name entered when the user created or joined the room. */
+  addedBy: string;
   service: MusicServiceType;
 }
 
@@ -153,30 +155,6 @@ export interface RequestStopPayload {
   roomId: string;
 }
 
-// WebRTC Signaling Payloads (Client → Server)
-export interface SDPOfferPayload {
-  roomId: string;
-  targetUserId: string;
-  sdp: RTCSessionDescriptionInit;
-}
-
-export interface SDPAnswerPayload {
-  roomId: string;
-  targetUserId: string;
-  sdp: RTCSessionDescriptionInit;
-}
-
-export interface ICECandidatePayload {
-  roomId: string;
-  targetUserId: string;
-  candidate: RTCIceCandidateInit;
-}
-
-export interface RequestSDPOfferPayload {
-  roomId: string;
-  targetUserId: string;
-}
-
 // ============================================================================
 // Server → Client Event Payloads
 // ============================================================================
@@ -249,26 +227,6 @@ export interface RequestStopServerPayload {
   requestedByUserId: string;
 }
 
-// WebRTC Signaling Payloads (Server → Client)
-export interface SDPOfferServerPayload {
-  fromUserId: string;
-  sdp: RTCSessionDescriptionInit;
-}
-
-export interface SDPAnswerServerPayload {
-  fromUserId: string;
-  sdp: RTCSessionDescriptionInit;
-}
-
-export interface ICECandidateServerPayload {
-  fromUserId: string;
-  candidate: RTCIceCandidateInit;
-}
-
-export interface RequestSDPOfferServerPayload {
-  fromUserId: string;
-}
-
 // ============================================================================
 // Socket.IO Event Interfaces
 // ============================================================================
@@ -288,10 +246,6 @@ export interface ServerToClientEvents {
   Error: (payload: ErrorPayload) => void;
   RequestPlayPause: (payload: RequestPlayPauseServerPayload) => void;
   RequestStop: (payload: RequestStopServerPayload) => void;
-  SDPOffer: (payload: SDPOfferServerPayload) => void;
-  SDPAnswer: (payload: SDPAnswerServerPayload) => void;
-  ICECandidate: (payload: ICECandidateServerPayload) => void;
-  RequestSDPOffer: (payload: RequestSDPOfferServerPayload) => void;
 }
 
 /** Events emitted by the client and received by the server */
@@ -308,8 +262,4 @@ export interface ClientToServerEvents {
   TrackFinished: (payload: TrackFinishedPayload) => void;
   RequestPlayPause: (payload: RequestPlayPausePayload) => void;
   RequestStop: (payload: RequestStopPayload) => void;
-  SDPOffer: (payload: SDPOfferPayload) => void;
-  SDPAnswer: (payload: SDPAnswerPayload) => void;
-  ICECandidate: (payload: ICECandidatePayload) => void;
-  RequestSDPOffer: (payload: RequestSDPOfferPayload) => void;
 }

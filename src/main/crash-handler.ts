@@ -8,10 +8,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const CRASH_LOG_FILENAME = 'crash.log';
+const APP_LOG_FILENAME = 'app.log';
 
-function getCrashLogPath(): string {
+function getLogPath(filename: string): string {
   const userData = app.getPath('userData');
-  return path.join(userData, CRASH_LOG_FILENAME);
+  return path.join(userData, filename);
 }
 
 function formatTimestamp(date: Date = new Date()): string {
@@ -20,14 +21,26 @@ function formatTimestamp(date: Date = new Date()): string {
 }
 
 export function appendCrashLog(detail: string): void {
-  const logPath = getCrashLogPath();
+  appendLog(CRASH_LOG_FILENAME, detail, 'crash');
+}
+
+/**
+ * Appends a recoverable diagnostic event.  This is intentionally separate
+ * from crash.log so expected operational failures remain easy to inspect.
+ */
+export function appendAppLog(detail: string): void {
+  appendLog(APP_LOG_FILENAME, detail, 'application');
+}
+
+function appendLog(filename: string, detail: string, kind: string): void {
+  const logPath = getLogPath(filename);
   const entry = `[${formatTimestamp()}]\n${detail}\n\n`;
   try {
     fs.appendFileSync(logPath, entry, 'utf-8');
   } catch (err) {
-    // If even crash logging fails, output to stderr as last resort
-    console.error('Failed to write crash.log:', err);
-    console.error('Original crash detail:', detail);
+    // If logging fails, output to stderr as the last resort.
+    console.error(`Failed to write ${kind} log:`, err);
+    console.error('Original log detail:', detail);
   }
 }
 

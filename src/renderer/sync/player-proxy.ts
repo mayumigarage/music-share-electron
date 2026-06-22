@@ -3,11 +3,39 @@
  * Phase 6: Abstraction layer for player operations (Renderer → Preload → Main → WebContentsView).
  */
 
-import type { MusicServiceType } from '../../shared/models.js';
-
 export class PlayerProxy {
-  loadTrack(url: string, service: MusicServiceType): void {
-    window.electronAPI.sendToPlayer({ type: 'loadTrack', url, service });
+  loadTrack(resolvedVideoId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+      const unsub = this.onMessage((msg) => {
+        if (msg.type === 'loaded') {
+          if (!resolved) {
+            resolved = true;
+            unsub();
+            clearTimeout(timer);
+            resolve();
+          }
+        }
+        if (msg.type === 'error') {
+          if (!resolved) {
+            resolved = true;
+            unsub();
+            clearTimeout(timer);
+            reject(new Error(msg.error));
+          }
+        }
+      });
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          unsub();
+          reject(new Error('loadTrack timed out after 30s'));
+        }
+      }, 30000);
+
+      window.electronAPI.sendToPlayer({ type: 'loadTrack', resolvedVideoId });
+    });
   }
 
   play(): void {
@@ -38,20 +66,4 @@ export class PlayerProxy {
     return window.electronAPI.onPlayerMessage(callback);
   }
 
-  /**
-   * Subscribe specifically to Spotify SDK initialization_error messages.
-   * This surfaces the exact error string from the SDK when EME/Widevine
-   * is unavailable or mis-configured, which is critical for diagnosing
-   * "Failed to initialize player" issues in Electron builds that lack
-   * the Widevine CDM binaries.
-   */
-  onInitializationError(callback: (message: string) => void): () => void {
-    return this.onMessage((msg) => {
-      if (msg.type === 'error' && msg.error.startsWith('init|')) {
-        const detail = msg.error.slice(5); // strip 'init|' prefix
-        console.error('[PlayerProxy] Spotify initialization_error:', detail);
-        callback(detail);
-      }
-    });
-  }
 }

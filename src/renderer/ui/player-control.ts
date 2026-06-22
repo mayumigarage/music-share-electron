@@ -1,6 +1,6 @@
 /**
  * MusicShare — Player Control (Bottom Bar)
- * Phase 6: Play/pause, stop, seek bar, volume slider.
+ * Phase 6: Play/pause, seek bar, volume slider.
  */
 
 import type { PlayerProxy } from '../sync/player-proxy.js';
@@ -16,7 +16,6 @@ export class PlayerControl {
   private isSeeking = false;
 
   private playBtn = document.getElementById('btn-play-pause') as HTMLButtonElement;
-  private stopBtn = document.getElementById('btn-stop') as HTMLButtonElement;
   private prevBtn = document.getElementById('btn-prev') as HTMLButtonElement;
   private nextBtn = document.getElementById('btn-next') as HTMLButtonElement;
   private seekBar = document.getElementById('seek-bar') as HTMLInputElement;
@@ -35,7 +34,6 @@ export class PlayerControl {
 
   init(): void {
     this.playBtn.addEventListener('click', () => this.togglePlayPause());
-    this.stopBtn.addEventListener('click', () => this.stop());
     this.prevBtn.addEventListener('click', () => this.prev());
     this.nextBtn.addEventListener('click', () => this.next());
 
@@ -119,12 +117,8 @@ export class PlayerControl {
       // If nothing is loaded but queue has tracks, start the first one
       if (!this.room.playerState.currentTrack && this.room.queue.length > 0) {
         const nextTrack = this.room.queue[0];
-        this.playerProxy.loadTrack(nextTrack.url, nextTrack.service);
-        // Note: playTrack/loadVideoById already start playback; do NOT call resume() here
-        this.room.playerState.currentTrack = nextTrack;
-        this.room.playerState.isPlaying = true;
-        this.room.playerState.positionSeconds = 0;
-        this.syncEngine.broadcastPlayerState();
+        if (!nextTrack.resolvedVideoId) return;
+        void this.startTrack(nextTrack);
         return;
       }
 
@@ -135,23 +129,10 @@ export class PlayerControl {
         this.playerProxy.pause();
       }
       this.room.playerState.isPlaying = shouldPlay;
+      this.updateState(this.room.playerState);
       this.syncEngine.broadcastPlayerState();
     } else {
       this.wsClient.requestPlayPause();
-    }
-  }
-
-  stop(): void {
-    if (!this.room || !this.currentUser) return;
-    if (this.isHost) {
-      this.playerProxy.stop();
-      this.room.playerState.isPlaying = false;
-      this.room.playerState.positionSeconds = 0;
-      this.room.playerState.currentTrack = null;
-      this.syncEngine.updateSeekPosition(0);
-      this.syncEngine.broadcastPlayerState();
-    } else {
-      this.wsClient.requestStop();
     }
   }
 
@@ -167,12 +148,27 @@ export class PlayerControl {
     } else if (this.room.queue.length > 0) {
       // If nothing is currently playing (e.g. after stop), start the first queued track
       const nextTrack = this.room.queue[0];
-      this.playerProxy.loadTrack(nextTrack.url, nextTrack.service);
-      this.room.playerState.currentTrack = nextTrack;
-      this.room.playerState.isPlaying = true;
-      this.room.playerState.positionSeconds = 0;
-      this.syncEngine.broadcastPlayerState();
+      if (!nextTrack.resolvedVideoId) return;
+      void this.startTrack(nextTrack);
     }
+  }
+
+  /** Start an explicitly selected queued track without leaving stale local state if loading fails. */
+  private async startTrack(track: Track): Promise<void> {
+    try {
+      await this.playerProxy.loadTrack(track.resolvedVideoId!);
+    } catch (error) {
+      console.error('[PlayerControl] Failed to load track:', error);
+      return;
+    }
+
+    if (!this.room || this.room.queue.every((queuedTrack) => queuedTrack.id !== track.id)) return;
+    // loadVideoById starts playback; do not issue an additional resume command.
+    this.room.playerState.currentTrack = track;
+    this.room.playerState.isPlaying = true;
+    this.room.playerState.positionSeconds = 0;
+    this.updateState(this.room.playerState);
+    this.syncEngine.broadcastPlayerState();
   }
 
   private resetUI(): void {

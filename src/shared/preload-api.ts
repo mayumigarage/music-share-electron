@@ -25,7 +25,7 @@ export type PlayerCommand =
   | { type: 'stop' }
   | { type: 'seek'; positionSeconds: number }
   | { type: 'setVolume'; volume: number }
-  | { type: 'loadTrack'; url: string; service: MusicServiceType }
+  | { type: 'loadTrack'; resolvedVideoId: string }
   | { type: 'getDuration' }
   | { type: 'getCurrentTime' }
   | { type: 'getState' };
@@ -38,9 +38,11 @@ export type PlayerMessage =
   | { type: 'ended' }
   | { type: 'stopped' }
   | { type: 'error'; error: string }
+  | { type: 'warning'; warning: string }
   | { type: 'duration'; durationSeconds: number }
   | { type: 'timeUpdate'; currentTimeSeconds: number }
   | { type: 'state'; isPlaying: boolean; currentTime: number; duration: number; trackInfo?: { title: string; artist: string; thumbnailUrl: string } }
+  | { type: 'loaded'; uri: string }
   | { type: 'buffering'; isBuffering: boolean };
 
 // ============================================================================
@@ -51,6 +53,8 @@ export type PlayerMessage =
 export interface ResolvedTrack {
   id: string;
   url: string;
+  /** YouTube/YouTube Music video selected for playback. */
+  resolvedVideoId: string | null;
   title: string;
   artist: string;
   thumbnailUrl: string;
@@ -68,6 +72,56 @@ export interface TrackResolutionError {
 
 export type TrackResolutionResult = ResolvedTrack | TrackResolutionError;
 
+/** A playback candidate shown in the add-track dialog. */
+export interface TrackSearchCandidate {
+  track: ResolvedTrack | null;
+  error: string | null;
+}
+
+/** Options for changing the keyword used when looking up playback candidates. */
+export interface TrackResolveOptions {
+  /**
+   * A user-edited search phrase. This is passed as data to yt-dlp, never
+   * executed as a shell command.
+   */
+  searchQuery?: string;
+}
+
+/** YouTube and YouTube Music candidates derived from one submitted URL. */
+export interface TrackSearchResult {
+  /** Identifies this lookup when delayed YouTube Music candidates arrive. */
+  requestId: string;
+  /** The normalized query generated from URL metadata. */
+  searchQuery: string;
+  youtube: TrackSearchCandidate[];
+  youtubeMusic: TrackSearchCandidate[];
+}
+
+/** YouTube Music candidates delivered after the initial YouTube result. */
+export interface YouTubeMusicCandidatesResult {
+  requestId: string;
+  youtubeMusic: TrackSearchCandidate[];
+}
+
+/**
+ * Diagnostic information emitted while resolving an external track URL.
+ * This is intentionally limited to metadata and yt-dlp arguments; no tokens
+ * or other credentials are included.
+ */
+export interface TrackResolverDebugLog {
+  stage: 'spotify-web-api' | 'spotify-metadata' | 'yt-dlp-command';
+  sourceUrl: string;
+  candidateType?: 'youtube' | 'youtubeMusic';
+  title?: string;
+  artist?: string;
+  titleCodePoints?: string[];
+  artistCodePoints?: string[];
+  searchQuery?: string;
+  ytDlpArgs?: string[];
+  /** Non-sensitive request/parsing context for troubleshooting metadata lookups. */
+  details?: Record<string, string | number | boolean | null>;
+}
+
 // ============================================================================
 // Electron API Interface
 // ============================================================================
@@ -79,6 +133,12 @@ export type TrackResolutionResult = ResolvedTrack | TrackResolutionError;
  *   window.electronAPI.openExternal('https://example.com');
  */
 export interface ElectronAPI {
+  /**
+   * Update the visible side panels and keep the player WebContentsView bounds
+   * aligned with the renderer layout.
+   */
+  setSidebarVisibility: (leftVisible: boolean, rightVisible: boolean) => Promise<void>;
+
   /**
    * Subscribe to messages from the player (WebContentsView).
    * @param callback - Function to handle player messages
@@ -105,15 +165,16 @@ export interface ElectronAPI {
    * @param url - The track URL to resolve
    * @returns The resolved track metadata or an error
    */
-  resolveTrack: (url: string) => Promise<TrackResolutionResult>;
+  resolveTrack: (url: string, options?: TrackResolveOptions) => Promise<TrackSearchResult>;
 
   /**
-   * Convert a Spotify track URL to an equivalent YouTube watch URL.
-   * Used in individual mode so Spotify links can still be played via the
-   * YouTube player without requiring a Spotify Premium account or SDK token.
-   * Returns null when the conversion fails.
+   * Subscribe to metadata and yt-dlp command diagnostics emitted during
+   * external-link resolution. Intended for the DevTools Console.
    */
-  convertSpotifyToYouTube: (url: string) => Promise<string | null>;
+  onTrackResolverDebug: (callback: (log: TrackResolverDebugLog) => void) => () => void;
+
+  /** Subscribe to YouTube Music candidates that complete after URL resolution. */
+  onYouTubeMusicCandidates: (callback: (result: YouTubeMusicCandidatesResult) => void) => () => void;
 
   /**
    * Report a crash/uncaught error from the renderer to the main process
@@ -126,26 +187,6 @@ export interface ElectronAPI {
    * For non-fatal errors use in-renderer toast instead.
    */
   showErrorDialog: (title: string, message: string) => void;
-
-  /**
-   * Get the desktop audio source ID for the MusicShare window.
-   * Used by WebRTC host to capture the player audio via desktopCapturer.
-   * Returns null if the source could not be found.
-   */
-  getDesktopAudioSource: () => Promise<{ id: string; name: string } | null>;
-
-  /**
-   * Send a WebRTC signaling message to the player WebContentsView.
-   * Used by SyncEngine to relay SDP/ICE between the player and guests.
-   */
-  sendPlayerSignaling: (payload: unknown) => void;
-
-  /**
-   * Subscribe to WebRTC signaling messages coming from the player WebContentsView.
-   * The player captures its own audio and manages RTCPeerConnections internally;
-   * only signaling (SDP/ICE) crosses the process boundary.
-   */
-  onPlayerSignaling: (callback: (payload: unknown) => void) => () => void;
 
   /**
    * Start the Spotify OAuth authorization flow (PKCE).
@@ -165,6 +206,17 @@ export interface ElectronAPI {
    * Main process will automatically refresh if expired.
    */
   getSpotifyToken: () => Promise<string | null>;
+
+  /**
+   * Manually inject a Spotify access token (development/testing only).
+   * Bypasses the OAuth flow. The token must include the `streaming` scope.
+   */
+  setSpotifyToken: (token: string) => Promise<void>;
+
+  /**
+   * Clear the Spotify authentication tokens (logout).
+   */
+  clearSpotifyAuth: () => Promise<void>;
 }
 
 // ============================================================================

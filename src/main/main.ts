@@ -78,6 +78,7 @@ if (!gotTheLock) {
    */
   app.on('widevine-ready', async (_event, widevineVersion) => {
     console.log(`[Main] Widevine ready (version ${widevineVersion})`);
+    await spotifyAuthManager.initialize();
     playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
     windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
   });
@@ -85,6 +86,7 @@ if (!gotTheLock) {
   app.on('widevine-error', async (_event, error) => {
     console.error('[Main] Widevine failed to initialise:', error);
     if (!windowManager) {
+      await spotifyAuthManager.initialize();
       playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
       windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
     }
@@ -95,6 +97,7 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     if (!windowManager) {
       console.warn('[Main] widevine-ready/widevine-error did not fire; falling back to app.whenReady()');
+      await spotifyAuthManager.initialize();
       playerServerUrl = `http://127.0.0.1:${await startPlayerServer()}`;
       windowManager = new WindowManager(playerServerUrl, spotifyAuthManager);
     }
