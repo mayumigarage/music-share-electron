@@ -4,7 +4,7 @@
  */
 
 import type { WebSocketClient } from '../sync/websocket-client.js';
-import type { Track } from '../../shared/models.js';
+import { MusicServiceType, type Track } from '../../shared/models.js';
 import type { TrackSearchCandidate, YouTubeMusicCandidatesResult } from '../../shared/preload-api.js';
 import '../../shared/preload-api.js';
 import type { FavoritesStore } from './favorites-store.js';
@@ -367,7 +367,12 @@ export class QueuePanel {
       this.activeResolutionRequestId = result.requestId;
       if (!useEditedQuery) this.trackSearchQueryInput.value = result.searchQuery;
       this.renderCandidates('youtube', result.youtube);
-      if (result.youtubeMusic.length > 0) {
+      const directYouTubeTrack = result.youtube.length === 1 ? result.youtube[0].track : null;
+      const isDirectYouTubeVideo = directYouTubeTrack?.service === MusicServiceType.YouTube
+        && Boolean(directYouTubeTrack.resolvedVideoId);
+      if (isDirectYouTubeVideo) {
+        document.getElementById('track-candidate-youtube-music')!.replaceChildren();
+      } else if (result.youtubeMusic.length > 0) {
         this.renderCandidates('youtubeMusic', result.youtubeMusic);
       } else {
         this.renderYouTubeMusicLoading();

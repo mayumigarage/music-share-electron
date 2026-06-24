@@ -116,6 +116,30 @@ function detectService(url: string): MusicServiceType {
   return MusicServiceType.YouTube;
 }
 
+/** Extract a playable video ID from the common YouTube and YouTube Music URL forms. */
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./u, '');
+    let videoId: string | null = null;
+
+    if (host === 'youtu.be') {
+      videoId = parsed.pathname.split('/').filter(Boolean)[0] || null;
+    } else if (host === 'youtube.com' || host === 'music.youtube.com' || host.endsWith('.youtube.com')) {
+      if (parsed.pathname === '/watch') {
+        videoId = parsed.searchParams.get('v');
+      } else {
+        const [kind, id] = parsed.pathname.split('/').filter(Boolean);
+        if (kind === 'shorts' || kind === 'embed' || kind === 'live') videoId = id || null;
+      }
+    }
+
+    return videoId && VIDEO_ID_PATTERN.test(videoId) ? videoId : null;
+  } catch {
+    return null;
+  }
+}
+
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -383,17 +407,25 @@ async function findYouTubeCandidate(
 // ---------------------------------------------------------------------------
 
 async function resolveYouTube(url: string): Promise<TrackResolutionResult> {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return fallbackResult(url, MusicServiceType.YouTube);
+
   const apiUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
   try {
     const { statusCode, body } = await makeRequest(apiUrl);
     if (statusCode < 200 || statusCode >= 300) {
-      return fallbackResult(url, MusicServiceType.YouTube);
+      return {
+        id: generateId(), url, resolvedVideoId: videoId,
+        title: 'YouTube Video', artist: 'Unknown Artist',
+        thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        durationSeconds: null, service: MusicServiceType.YouTube,
+      };
     }
     const data = JSON.parse(body);
     return {
       id: generateId(),
       url,
-      resolvedVideoId: null,
+      resolvedVideoId: videoId,
       title: data.title || 'Unknown Track',
       artist: data.author_name || 'Unknown Artist',
       thumbnailUrl: data.thumbnail_url || '',
@@ -401,7 +433,12 @@ async function resolveYouTube(url: string): Promise<TrackResolutionResult> {
       service: MusicServiceType.YouTube,
     };
   } catch {
-    return fallbackResult(url, MusicServiceType.YouTube);
+    return {
+      id: generateId(), url, resolvedVideoId: videoId,
+      title: 'YouTube Video', artist: 'Unknown Artist',
+      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      durationSeconds: null, service: MusicServiceType.YouTube,
+    };
   }
 }
 
@@ -593,6 +630,19 @@ export async function resolveTrack(
   }
 
   const searchQuery = options?.searchQuery?.trim() || buildSearchQuery(result.artist, result.title);
+
+  // A YouTube URL already identifies exactly what the user wants to play.
+  // Do not search for lookalikes: present the linked video as the sole
+  // YouTube candidate, with its video ID ready for direct playback.
+  if (service === MusicServiceType.YouTube && result.resolvedVideoId) {
+    return {
+      requestId,
+      searchQuery,
+      youtube: [{ track: result, error: null }],
+      youtubeMusic: [],
+    };
+  }
+
   const candidateKey = `${normalizeUrlCacheKey(url)}\u0000${normalizeCacheKey(searchQuery)}`;
   const youtubeLookup = getCached(candidateCache, `youtube\u0000${candidateKey}`, () => (
     findYouTubeCandidate(url, result.title, result.artist, 'youtube', service, result.durationSeconds, debugLog, searchQuery)
