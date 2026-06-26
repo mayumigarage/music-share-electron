@@ -14,7 +14,7 @@ export class PlaylistPanel {
         const detail = {
           id: item.dataset.playlist ?? '',
           name: item.dataset.playlistName ?? 'プレイリスト',
-          cover: item.querySelector('.playlist-cover')?.textContent ?? '♫',
+          icon: item.querySelector<HTMLElement>('.playlist-cover')?.dataset.playlistIcon ?? 'musical-note',
         };
         window.dispatchEvent(new CustomEvent('musicshare:playlist-selected', { detail }));
       });

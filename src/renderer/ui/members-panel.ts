@@ -4,6 +4,7 @@
  */
 
 import type { User } from '../../shared/models.js';
+import { getIconMarkup } from './icons.js';
 
 export class MembersPanel {
   private members: User[] = [];
@@ -48,12 +49,12 @@ export class MembersPanel {
     const offline = this.members.filter((m) => !m.isOnline);
 
     if (online.length > 0) {
-      this.listEl.appendChild(this.createGroupLabel('🟢 オンライン'));
+      this.listEl.appendChild(this.createGroupLabel('オンライン', 'online'));
       online.forEach((m) => this.listEl.appendChild(this.createMemberItem(m)));
     }
 
     if (offline.length > 0) {
-      this.listEl.appendChild(this.createGroupLabel('⚪ オフライン'));
+      this.listEl.appendChild(this.createGroupLabel('オフライン', 'offline'));
       offline.forEach((m) => this.listEl.appendChild(this.createMemberItem(m)));
     }
 
@@ -62,9 +63,9 @@ export class MembersPanel {
     }
   }
 
-  private createGroupLabel(text: string): HTMLElement {
+  private createGroupLabel(text: string, status: 'online' | 'offline'): HTMLElement {
     const div = document.createElement('div');
-    div.className = 'member-group-label';
+    div.className = `member-group-label ${status}`;
     div.textContent = text;
     return div;
   }
@@ -86,7 +87,7 @@ export class MembersPanel {
     if (user.id === this.hostId) {
       const badge = document.createElement('span');
       badge.className = 'member-badge';
-      badge.textContent = '👑 Host';
+      badge.innerHTML = `${getIconMarkup('trophy', { size: 16 })}<span>Host</span>`;
       el.appendChild(badge);
     }
 

@@ -7,6 +7,7 @@ import type { PlayerProxy } from '../sync/player-proxy.js';
 import type { WebSocketClient } from '../sync/websocket-client.js';
 import type { SyncEngine } from '../sync/sync-engine.js';
 import type { Room, User, PlayerState, Track } from '../../shared/models.js';
+import { setIconButton } from './icons.js';
 
 export class PlayerControl {
   private room: Room | null = null;
@@ -63,7 +64,7 @@ export class PlayerControl {
     this.volumeSlider.addEventListener('input', () => {
       const vol = Number(this.volumeSlider.value);
       this.playerProxy.setVolume(vol / 100);
-      this.muteBtn.textContent = vol === 0 ? '🔇' : vol < 50 ? '🔉' : '🔊';
+      setIconButton(this.muteBtn, vol === 0 ? 'speaker-x-mark' : 'speaker-wave', vol === 0 ? 'ミュート解除' : 'ミュート', { size: 20 });
     });
 
     this.muteBtn.addEventListener('click', () => {
@@ -72,11 +73,11 @@ export class PlayerControl {
         this.volumeBeforeMute = current;
         this.volumeSlider.value = '0';
         this.playerProxy.setVolume(0);
-        this.muteBtn.textContent = '🔇';
+        setIconButton(this.muteBtn, 'speaker-x-mark', 'ミュート解除', { size: 20 });
       } else {
         this.volumeSlider.value = String(this.volumeBeforeMute);
         this.playerProxy.setVolume(this.volumeBeforeMute / 100);
-        this.muteBtn.textContent = this.volumeBeforeMute < 50 ? '🔉' : '🔊';
+        setIconButton(this.muteBtn, 'speaker-wave', 'ミュート', { size: 20 });
       }
     });
   }
@@ -104,7 +105,7 @@ export class PlayerControl {
       this.currentDuration = dur;
       this.seekBar.max = String(dur || 100);
       this.timeTotal.textContent = this.formatTime(dur);
-      this.playBtn.textContent = state.isPlaying ? '⏸️' : '▶️';
+      setIconButton(this.playBtn, state.isPlaying ? 'pause-solid' : 'play-solid', state.isPlaying ? '一時停止' : '再生', { size: 20 });
     } else {
       this.resetUI();
     }
@@ -143,6 +144,12 @@ export class PlayerControl {
     if (!this.room || !this.isHost) return;
     const currentTrackId = this.room.playerState.currentTrack?.id;
     if (currentTrackId) {
+      this.playerProxy.stop();
+      this.room.playerState.currentTrack = null;
+      this.room.playerState.isPlaying = false;
+      this.room.playerState.positionSeconds = 0;
+      this.updateState(this.room.playerState);
+      this.syncEngine.broadcastPlayerState();
       this.wsClient.skipTrack(currentTrackId);
     } else if (this.room.queue.length > 0) {
       // If nothing is currently playing (e.g. after stop), start the first queued track
@@ -157,6 +164,10 @@ export class PlayerControl {
       await this.playerProxy.loadTrack(track);
     } catch (error) {
       console.error('[PlayerControl] Failed to load track:', error);
+      this.playerProxy.stop();
+      if (this.room?.queue.some((queuedTrack) => queuedTrack.id === track.id)) {
+        this.wsClient.trackFinished(track.id);
+      }
       return;
     }
 
@@ -174,7 +185,7 @@ export class PlayerControl {
     this.seekBar.max = '100';
     this.timeCurrent.textContent = '0:00';
     this.timeTotal.textContent = '0:00';
-    this.playBtn.textContent = '▶️';
+    setIconButton(this.playBtn, 'play-solid', '再生', { size: 20 });
   }
 
   private formatTime(seconds: number): string {

@@ -13,6 +13,7 @@ import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
 import { FavoritesStore } from './favorites-store.js';
 import { AudioSearchPanel } from './audio-search-panel.js';
+import { isIconName, setIcon, setIconButton, type IconName } from './icons.js';
 import { RoomMode, RoomPlayerType } from '../../shared/models.js';
 import type {
   Room,
@@ -149,14 +150,24 @@ export class AppUI {
       this.membersPanel.removeMember(userId);
     };
     this.wsClient.onHostTransferred = (newHostId) => this.handleHostTransferred(newHostId);
-    this.wsClient.onQueueUpdated = (queue) => this.queuePanel.setQueue(queue);
+    this.wsClient.onQueueUpdated = (queue) => {
+      if (this.currentRoom) {
+        this.currentRoom.queue = queue;
+      }
+      this.queuePanel.setQueue(queue);
+    };
     this.wsClient.onTrackAdded = (track) => {
       this.showToast(`「${track.title}」が追加されました`, 'success');
     };
-    this.wsClient.onHistoryUpdated = (history) => this.historyPanel.setHistory(history);
+    this.wsClient.onHistoryUpdated = (history) => {
+      if (this.currentRoom) {
+        this.currentRoom.history = history;
+      }
+      this.historyPanel.setHistory(history);
+    };
     this.wsClient.onPlayerStateUpdated = (state) => {
       this.handlePlayerStateUpdated(state);
-      this.syncEngine.handlePlayerStateUpdated(state);
+      void this.syncEngine.handlePlayerStateUpdated(state);
     };
     this.syncEngine.onHostPlayerStateObserved = (state) => {
       this.handlePlayerStateUpdated(state);
@@ -373,10 +384,10 @@ export class AppUI {
     });
 
     window.addEventListener('musicshare:playlist-selected', (event) => {
-      const { id, name, cover } = (event as CustomEvent<{ id: string; name: string; cover: string }>).detail;
+      const { id, name, icon } = (event as CustomEvent<{ id: string; name: string; icon: string }>).detail;
       this.selectedPlaylistId = id;
       this.playlistCenterTitle.textContent = name;
-      this.playlistHeroCover.textContent = cover;
+      this.setPlaylistHeroIcon(icon);
       if (id === 'favorites') {
         this.renderFavoritePlaylist();
       }
@@ -416,9 +427,9 @@ export class AppUI {
 
       const favoriteBtn = document.createElement('button');
       favoriteBtn.className = 'track-favorite is-favorite';
-      favoriteBtn.textContent = '★';
       favoriteBtn.title = 'お気に入りから削除';
       favoriteBtn.setAttribute('aria-label', favoriteBtn.title);
+      setIcon(favoriteBtn, 'heart-solid', { size: 20 });
       favoriteBtn.addEventListener('click', () => {
         this.favoritesStore.toggle(track);
         this.renderFavoritePlaylist();
@@ -507,15 +518,15 @@ export class AppUI {
       'btn-toggle-left-sidebar',
       this.isLeftSidebarVisible,
       '左サイドバー',
-      '◀',
-      '▶',
+      'chevron-left',
+      'chevron-right',
     );
     this.updateSidebarToggleButton(
       'btn-toggle-right-sidebar',
       this.isRightSidebarVisible,
       '右サイドバー',
-      '▶',
-      '◀',
+      'chevron-right',
+      'chevron-left',
     );
 
     window.electronAPI.setSidebarVisibility(this.isLeftSidebarVisible, this.isRightSidebarVisible)
@@ -526,15 +537,19 @@ export class AppUI {
     id: string,
     isVisible: boolean,
     label: string,
-    visibleIcon: string,
-    hiddenIcon: string,
+    visibleIcon: IconName,
+    hiddenIcon: IconName,
   ): void {
     const button = document.getElementById(id) as HTMLButtonElement;
     const action = isVisible ? '閉じる' : '開く';
-    button.textContent = isVisible ? visibleIcon : hiddenIcon;
-    button.title = `${label}を${action}`;
-    button.setAttribute('aria-label', `${label}を${action}`);
+    setIconButton(button, isVisible ? visibleIcon : hiddenIcon, `${label}を${action}`);
     button.setAttribute('aria-expanded', String(isVisible));
+  }
+
+  private setPlaylistHeroIcon(icon: string): void {
+    const iconName = isIconName(icon) ? icon : 'musical-note';
+    this.playlistHeroCover.dataset.playlistIcon = iconName;
+    setIcon(this.playlistHeroCover, iconName, { size: 24 });
   }
 
   private setWorkspace(workspace: Workspace): void {
@@ -648,7 +663,8 @@ export class AppUI {
     }
 
     const playBtn = document.getElementById('btn-play-pause') as HTMLButtonElement;
-    playBtn.textContent = isPlaying ? '⏸️' : '▶️';
+    setIconButton(playBtn, isPlaying ? 'pause-solid' : 'play-solid', isPlaying ? '一時停止' : '再生', { size: 20 });
+    this.queuePanel.setPlayingTrack(track?.id ?? null);
   }
 
   showToast(message: string, type: 'info' | 'success' | 'error' = 'info'): void {

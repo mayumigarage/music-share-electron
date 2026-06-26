@@ -27,6 +27,7 @@ export class SyncEngine {
   // Deduplicate rapid duplicate player-error emissions
   private lastPlayerError = '';
   private lastPlayerErrorAt = 0;
+  private recoveringTrackIds = new Set<string>();
 
   constructor(
     private wsClient: WebSocketClient,
@@ -73,12 +74,18 @@ export class SyncEngine {
       if (this.room) {
         this.room.playerState = state;
       }
+      if (!state.currentTrack) {
+        this.lastBroadcastState = state;
+        this.playerProxy.stop();
+        this.publishHostPlayerState();
+        return;
+      }
       if (trackChanged && state.currentTrack) {
         try {
           await this.playerProxy.loadTrack(state.currentTrack);
         } catch (err) {
           console.error('[SyncEngine] Host loadTrack failed:', err);
-          this.onPlayerError?.(err instanceof Error ? err.message : String(err));
+          this.handlePlaybackFailure(err instanceof Error ? err.message : String(err));
           return;
         }
       }
@@ -154,7 +161,14 @@ export class SyncEngine {
 
     // Load track if changed
     const currentTrackId = this.room?.playerState.currentTrack?.id;
-    if (state.currentTrack && state.currentTrack.id !== currentTrackId) {
+    if (!state.currentTrack) {
+      this.playerProxy.stop();
+      if (this.room) {
+        this.room.playerState = state;
+      }
+      return;
+    }
+    if (state.currentTrack.id !== currentTrackId) {
       try {
         await this.playerProxy.loadTrack(state.currentTrack);
       } catch (err) {
@@ -287,13 +301,11 @@ export class SyncEngine {
 
           console.error('[PlayerProxy] Player error:', errorDetail);
 
-          // Always surface the error to UI
-          this.onPlayerError?.(errorDetail);
-
           // Reset playing state on error so UI doesn't get stuck in "playing" state
           if (this.lastBroadcastState) {
             this.lastBroadcastState.isPlaying = false;
           }
+          this.handlePlaybackFailure(errorDetail);
 
           break;
         }
@@ -308,6 +320,34 @@ export class SyncEngine {
     const state = this.lastBroadcastState;
     this.room.playerState = state;
     this.onHostPlayerStateObserved?.(state);
+  }
+
+  private handlePlaybackFailure(errorDetail: string): void {
+    this.onPlayerError?.(errorDetail);
+
+    if (!this.isHost || !this.room?.playerState.currentTrack) return;
+
+    const failedTrack = this.room.playerState.currentTrack;
+    if (this.recoveringTrackIds.has(failedTrack.id)) return;
+    this.recoveringTrackIds.add(failedTrack.id);
+
+    const stoppedState: PlayerState = {
+      ...this.room.playerState,
+      isPlaying: false,
+      positionSeconds: 0,
+      updatedAt: Date.now(),
+    };
+    this.room.playerState = stoppedState;
+    this.lastBroadcastState = stoppedState;
+    this.publishHostPlayerState();
+    this.broadcastPlayerState();
+
+    setTimeout(() => {
+      if (this.room?.playerState.currentTrack?.id === failedTrack.id) {
+        this.wsClient.trackFinished(failedTrack.id);
+      }
+      this.recoveringTrackIds.delete(failedTrack.id);
+    }, 0);
   }
 
 }

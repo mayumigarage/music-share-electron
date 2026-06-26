@@ -14,6 +14,7 @@ import {
   stopAudioOnlyMode,
 } from '../sync/audio-only-player.js';
 import type { AudioOnlySearchResult } from '../sync/audio-only-player.js';
+import { setIconButton } from './icons.js';
 
 export class AudioSearchPanel {
   private form = document.getElementById('audio-search-form') as HTMLFormElement;
@@ -120,9 +121,7 @@ export class AudioSearchPanel {
       const playButton = document.createElement('button');
       playButton.type = 'button';
       playButton.className = 'audio-search-play';
-      playButton.textContent = '▶';
-      playButton.title = 'Audio-onlyで再生';
-      playButton.setAttribute('aria-label', `${result.title} を Audio-only で再生`);
+      setIconButton(playButton, 'play', `${result.title} を Audio-only で再生`, { size: 18 });
       playButton.addEventListener('click', (event) => {
         event.stopPropagation();
         void this.play(result.id);

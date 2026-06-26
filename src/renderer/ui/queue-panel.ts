@@ -8,12 +8,14 @@ import { MusicServiceType, type Track } from '../../shared/models.js';
 import type { TrackSearchCandidate, YouTubeMusicCandidatesResult } from '../../shared/preload-api.js';
 import '../../shared/preload-api.js';
 import type { FavoritesStore } from './favorites-store.js';
+import { getIconMarkup, setIcon, setIconButton, type IconName } from './icons.js';
 
 type TrackAddMode = 'url';
 
 export class QueuePanel {
   private queue: Track[] = [];
   private dragSrcIndex: number | null = null;
+  private playingTrackId: string | null = null;
 
   private listEl = document.getElementById('queue-list') as HTMLElement;
   private countEl = document.getElementById('queue-count') as HTMLElement;
@@ -90,6 +92,13 @@ export class QueuePanel {
     this.render();
   }
 
+  setPlayingTrack(trackId: string | null): void {
+    this.playingTrackId = trackId;
+    this.listEl.querySelectorAll<HTMLElement>('.track-item').forEach((item) => {
+      item.classList.toggle('is-playing', item.dataset.trackId === trackId);
+    });
+  }
+
   openAddModal(): void {
     this.trackOverlay.style.display = 'flex';
     this.trackUrlInput.value = '';
@@ -157,6 +166,7 @@ export class QueuePanel {
   private createTrackElement(track: Track, index: number): HTMLElement {
     const el = document.createElement('div');
     el.className = 'track-item';
+    el.classList.toggle('is-playing', this.playingTrackId === track.id);
     el.dataset.trackId = track.id;
     el.dataset.index = String(index);
     el.draggable = true;
@@ -190,9 +200,9 @@ export class QueuePanel {
     const favoriteBtn = document.createElement('button');
     const isFavorite = this.favoritesStore.has(track.id);
     favoriteBtn.className = `track-favorite${isFavorite ? ' is-favorite' : ''}`;
-    favoriteBtn.textContent = isFavorite ? '★' : '☆';
     favoriteBtn.title = isFavorite ? 'お気に入りから削除' : 'お気に入りに追加';
     favoriteBtn.setAttribute('aria-label', favoriteBtn.title);
+    setIcon(favoriteBtn, isFavorite ? 'heart-solid' : 'heart', { size: 20 });
     favoriteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const added = this.favoritesStore.toggle(track);
@@ -206,9 +216,7 @@ export class QueuePanel {
 
     const moreBtn = document.createElement('button');
     moreBtn.className = 'track-more';
-    moreBtn.textContent = '⋯';
-    moreBtn.title = '曲のメニュー';
-    moreBtn.setAttribute('aria-label', '曲のメニュー');
+    setIconButton(moreBtn, 'ellipsis-horizontal', '曲のメニュー', { size: 20 });
     moreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const rect = moreBtn.getBoundingClientRect();
@@ -217,8 +225,7 @@ export class QueuePanel {
 
     const delBtn = document.createElement('button');
     delBtn.className = 'track-delete';
-    delBtn.textContent = '×';
-    delBtn.title = '削除';
+    setIconButton(delBtn, 'trash', '削除', { size: 18 });
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.wsClient.removeTrack(track.id);
@@ -285,15 +292,15 @@ export class QueuePanel {
 
     type MenuItem =
       | { separator: true }
-      | { label: string; action: () => void; disabled?: boolean; danger?: boolean };
+      | { label: string; icon: IconName; action: () => void; disabled?: boolean; danger?: boolean };
 
     const items: MenuItem[] = [
-      { label: '⬆️ 上へ', action: () => this.moveTrack(index, index - 1), disabled: index === 0 },
-      { label: '⬇️ 下へ', action: () => this.moveTrack(index, index + 1), disabled: index === this.queue.length - 1 },
+      { label: '上へ', icon: 'arrow-up', action: () => this.moveTrack(index, index - 1), disabled: index === 0 },
+      { label: '下へ', icon: 'arrow-down', action: () => this.moveTrack(index, index + 1), disabled: index === this.queue.length - 1 },
       { separator: true },
-      { label: '🔗 リンクを開く', action: () => window.electronAPI.openExternal(track.url) },
+      { label: 'リンクを開く', icon: 'arrow-right', action: () => window.electronAPI.openExternal(track.url) },
       { separator: true },
-      { label: '🗑️ 削除', action: () => this.wsClient.removeTrack(track.id), danger: true },
+      { label: '削除', icon: 'trash', action: () => this.wsClient.removeTrack(track.id), danger: true },
     ];
 
     items.forEach((item) => {
@@ -306,7 +313,7 @@ export class QueuePanel {
       const div = document.createElement('div');
       div.className = 'context-menu-item';
       if (item.danger) div.classList.add('danger');
-      div.textContent = item.label;
+      div.innerHTML = `${getIconMarkup(item.icon, { size: 16 })}<span>${item.label}</span>`;
       if (item.disabled) {
         div.style.opacity = '0.4';
         div.style.pointerEvents = 'none';

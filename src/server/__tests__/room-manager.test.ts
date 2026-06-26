@@ -240,7 +240,36 @@ describe('RoomManager', () => {
         updatedAt: Date.now(),
       };
       expect(manager.updatePlayerState(room.id, newState)).toBe(true);
+      expect(manager.getRoom(room.id)!.playerState.isPlaying).toBe(false);
+      expect(manager.getRoom(room.id)!.playerState.positionSeconds).toBe(0);
+    });
+
+    it('keeps playing state when a current track exists', () => {
+      const { room } = manager.createRoom({
+        roomName: 'Test',
+        userName: 'Alice',
+        mode: RoomMode.Individual,
+        maxGuests: 5,
+      });
+      const track: Track = {
+        id: 'track-1',
+        url: '',
+        resolvedVideoId: null,
+        title: 'Song',
+        artist: 'Artist',
+        thumbnailUrl: '',
+        durationSeconds: null,
+        addedBy: 'Alice',
+        service: MusicServiceType.YouTube,
+      };
+      expect(manager.updatePlayerState(room.id, {
+        isPlaying: true,
+        positionSeconds: 30,
+        currentTrack: track,
+        updatedAt: Date.now(),
+      })).toBe(true);
       expect(manager.getRoom(room.id)!.playerState.isPlaying).toBe(true);
+      expect(manager.getRoom(room.id)!.playerState.positionSeconds).toBe(30);
     });
   });
 

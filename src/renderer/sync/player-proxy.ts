@@ -35,6 +35,7 @@ export class PlayerProxy {
 
   async loadTrack(track: Track): Promise<void> {
     if (this.playerType === RoomPlayerType.HtmlVideo) {
+      this.videoPlayer.prepareForLoad();
       const sourceUrl = await window.electronAPI.resolveHtmlVideoSource(track);
       return this.videoPlayer.loadTrack({ ...track, url: sourceUrl });
     }

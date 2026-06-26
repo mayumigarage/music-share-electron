@@ -26,6 +26,8 @@ export class DomVideoPlayer {
   private video: HTMLVideoElement;
   private listeners = new Set<MessageListener>();
   private reportInterval: ReturnType<typeof setInterval> | null = null;
+  private loadSequence = 0;
+  private suppressMediaEvents = false;
 
   constructor() {
     const existing = document.getElementById('html-video-player');
@@ -61,32 +63,46 @@ export class DomVideoPlayer {
     return () => this.listeners.delete(listener);
   }
 
+  prepareForLoad(): void {
+    this.resetMediaElement({ clearSource: true });
+  }
+
   loadTrack(track: Track): Promise<void> {
+    const loadId = ++this.loadSequence;
     return new Promise((resolve, reject) => {
       if (!track.url) {
         reject(new Error('動画URLが空です'));
         return;
       }
 
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
         this.video.removeEventListener('loadedmetadata', handleLoaded);
         this.video.removeEventListener('error', handleError);
       };
       const handleLoaded = () => {
+        if (loadId !== this.loadSequence) return;
         cleanup();
         this.emit({ type: 'loaded', uri: track.url });
         this.emitState();
         resolve();
       };
       const handleError = () => {
+        if (loadId !== this.loadSequence) return;
         cleanup();
         const error = this.video.error;
         reject(new Error(error ? `HTML video error: ${error.code}` : 'HTML video error'));
       };
 
-      this.stopReporting();
+      this.resetMediaElement({ clearSource: true });
       this.video.addEventListener('loadedmetadata', handleLoaded);
       this.video.addEventListener('error', handleError);
+      timeoutId = setTimeout(() => {
+        if (loadId !== this.loadSequence) return;
+        cleanup();
+        reject(new Error('HTML video load timed out'));
+      }, 30000);
       console.log(`[DomVideoPlayer][before-video-src] ${JSON.stringify({
         trackId: track.id,
         title: track.title,
@@ -109,6 +125,9 @@ export class DomVideoPlayer {
   }
 
   play(): void {
+    if (this.video.ended && Number.isFinite(this.video.duration)) {
+      this.video.currentTime = 0;
+    }
     void this.video.play().catch((error: unknown) => {
       this.emit({ type: 'error', error: error instanceof Error ? error.message : String(error) });
     });
@@ -117,10 +136,7 @@ export class DomVideoPlayer {
   pause(): void { this.video.pause(); }
 
   stop(): void {
-    this.video.pause();
-    if (Number.isFinite(this.video.duration)) {
-      this.video.currentTime = 0;
-    }
+    this.resetMediaElement({ clearSource: false });
     this.emit({ type: 'stopped' });
   }
 
@@ -141,19 +157,23 @@ export class DomVideoPlayer {
     });
 
     this.video.addEventListener('playing', () => {
+      if (this.suppressMediaEvents) return;
       this.emit({ type: 'playing' });
       this.startReporting();
     });
     this.video.addEventListener('pause', () => {
+      if (this.suppressMediaEvents) return;
       this.emit({ type: 'paused' });
       this.stopReporting();
       this.emitState();
     });
     this.video.addEventListener('ended', () => {
+      if (this.suppressMediaEvents) return;
       this.emit({ type: 'ended' });
       this.stopReporting();
     });
     this.video.addEventListener('error', () => {
+      if (this.suppressMediaEvents) return;
       const error = this.video.error;
       this.emit({ type: 'error', error: error ? `HTML video error: ${error.code}` : 'HTML video error' });
     });
@@ -227,6 +247,25 @@ export class DomVideoPlayer {
   private stopReporting(): void {
     if (this.reportInterval) clearInterval(this.reportInterval);
     this.reportInterval = null;
+  }
+
+  private resetMediaElement({ clearSource }: { clearSource: boolean }): void {
+    this.stopReporting();
+    this.suppressMediaEvents = true;
+    try {
+      this.video.pause();
+      if (Number.isFinite(this.video.duration)) {
+        this.video.currentTime = 0;
+      }
+      if (clearSource) {
+        this.video.removeAttribute('src');
+        this.video.load();
+      }
+    } finally {
+      window.setTimeout(() => {
+        this.suppressMediaEvents = false;
+      }, 0);
+    }
   }
 
   private emitState(): void {

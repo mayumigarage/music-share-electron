@@ -8,6 +8,7 @@ import { WebSocketClient } from './sync/websocket-client.js';
 import { SyncEngine } from './sync/sync-engine.js';
 import { PlayerProxy } from './sync/player-proxy.js';
 import { initializeSidebarResizers } from './ui/sidebar-resizer.js';
+import { initializeStaticIcons } from './ui/icons.js';
 import {
   getAudioOnlyMetadata,
   pauseAudioOnlyMode,
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   let app: AppUI | null = null;
 
   try {
+    initializeStaticIcons();
     initializeSidebarResizers();
     const wsClient = new WebSocketClient();
     const playerProxy = new PlayerProxy();

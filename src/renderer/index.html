@@ -6,17 +6,29 @@
   <title>MusicShare</title>
   <style>
     :root {
-      --bg-primary: #121212;
-      --bg-secondary: #1e1e1e;
-      --bg-tertiary: #2a2a2a;
-      --bg-hover: #333333;
+      --bg-primary: #071014;
+      --bg-secondary: rgba(255, 255, 255, 0.065);
+      --bg-tertiary: rgba(255, 255, 255, 0.09);
+      --bg-hover: rgba(255, 255, 255, 0.13);
       --text-primary: #ffffff;
-      --text-secondary: #b3b3b3;
-      --text-muted: #666666;
-      --accent: #1db954;
-      --accent-hover: #1ed760;
-      --danger: #e22134;
-      --border: #333333;
+      --text-secondary: rgba(235, 244, 246, 0.72);
+      --text-muted: rgba(235, 244, 246, 0.43);
+      --accent: #20d875;
+      --accent-hover: #35e987;
+      --danger: #ff6475;
+      --border: rgba(255, 255, 255, 0.12);
+      --border-soft: rgba(255, 255, 255, 0.08);
+      --glass-panel: rgba(255, 255, 255, 0.055);
+      --glass-panel-strong: rgba(255, 255, 255, 0.085);
+      --glass-card: rgba(255, 255, 255, 0.075);
+      --glass-card-hover: rgba(255, 255, 255, 0.105);
+      --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.28);
+      --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.22);
+      --radius-button: 8px;
+      --radius-input: 10px;
+      --radius-track: 14px;
+      --radius-playlist: 16px;
+      --transition-ui: 180ms ease;
       --panel-left-width: 240px;
       --panel-right-width: 280px;
       --control-height: 80px;
@@ -33,12 +45,42 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--bg-primary);
+      background:
+        radial-gradient(circle at 14% 6%, rgba(32, 216, 117, 0.13), transparent 25%),
+        radial-gradient(circle at 80% 18%, rgba(68, 132, 255, 0.15), transparent 32%),
+        linear-gradient(135deg, #071014 0%, #0c1722 48%, #11151d 100%);
       color: var(--text-primary);
       overflow: hidden;
       height: 100vh;
       width: 100vw;
       user-select: none;
+    }
+
+    .hero-icon {
+      display: block;
+      flex: 0 0 auto;
+      stroke-width: 1.8;
+    }
+
+    .hero-icon-16 { width: 16px; height: 16px; }
+    .hero-icon-18 { width: 18px; height: 18px; }
+    .hero-icon-20 { width: 20px; height: 20px; }
+    .hero-icon-24 { width: 24px; height: 24px; }
+
+    .icon-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn .hero-icon,
+    .tab .hero-icon,
+    .brand .hero-icon,
+    .members-header .hero-icon,
+    .panel-title .hero-icon,
+    .modal-header .hero-icon {
+      display: inline-block;
+      vertical-align: -3px;
     }
 
     /* ── Top Bar ── */
@@ -48,7 +90,8 @@
       left: 0;
       right: 0;
       height: var(--topbar-height);
-      background: var(--bg-secondary);
+      background: rgba(8, 18, 25, 0.72);
+      backdrop-filter: blur(24px) saturate(150%);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -64,6 +107,7 @@
       font-weight: 700;
       font-size: 16px;
       flex-shrink: 0;
+      letter-spacing: 0.01em;
     }
 
     .sidebar-toggle {
@@ -113,14 +157,15 @@
       display: inline-flex;
       align-items: center;
       padding: 3px;
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      background: var(--bg-primary);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-input);
+      background: rgba(255, 255, 255, 0.055);
+      backdrop-filter: blur(18px) saturate(140%);
     }
 
     .workspace-switch button {
       border: 0;
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 7px 11px;
       background: transparent;
       color: var(--text-secondary);
@@ -128,14 +173,19 @@
       font: inherit;
       font-size: 12px;
       white-space: nowrap;
+      transition: background var(--transition-ui), color var(--transition-ui), transform var(--transition-ui);
     }
 
-    .workspace-switch button:hover { color: var(--text-primary); }
+    .workspace-switch button:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.07);
+    }
 
     .workspace-switch button.active {
-      color: #08130c;
-      background: var(--accent);
+      color: #06140d;
+      background: linear-gradient(135deg, var(--accent), #74f1ae);
       font-weight: 700;
+      box-shadow: 0 0 0 1px rgba(32, 216, 117, 0.22), 0 8px 18px rgba(32, 216, 117, 0.18);
     }
 
     .header-action {
@@ -161,9 +211,10 @@
       min-width: 178px;
       padding: 4px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg-secondary);
-      box-shadow: 0 10px 24px rgba(0, 0, 0, .35);
+      border-radius: var(--radius-input);
+      background: rgba(14, 26, 35, 0.9);
+      backdrop-filter: blur(22px) saturate(145%);
+      box-shadow: var(--shadow-soft);
     }
 
     #sort-menu.open { display: block; }
@@ -173,7 +224,7 @@
       width: 100%;
       padding: 8px 10px;
       border: 0;
-      border-radius: 5px;
+      border-radius: 8px;
       background: transparent;
       color: var(--text-primary);
       cursor: pointer;
@@ -185,19 +236,24 @@
 
     .btn-icon {
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--text-secondary);
       cursor: pointer;
       padding: 6px;
-      border-radius: 4px;
+      border-radius: var(--radius-button);
       font-size: 18px;
       line-height: 1;
-      transition: background 0.15s, color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-ui), border-color var(--transition-ui), color var(--transition-ui), transform var(--transition-ui);
     }
 
     .btn-icon:hover {
       background: var(--bg-hover);
+      border-color: var(--border-soft);
       color: var(--text-primary);
+      transform: translateY(-1px);
     }
 
     /* ── Main Layout ── */
@@ -287,7 +343,8 @@
     /* ── Left Panel ── */
     #left-panel {
       width: var(--panel-left-width);
-      background: var(--bg-secondary);
+      background: var(--glass-panel);
+      backdrop-filter: blur(24px) saturate(145%);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
@@ -373,18 +430,29 @@
 
     .playlist-card {
       min-width: 0;
-      padding: 6px;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      background: transparent;
+      padding: 7px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-playlist);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.095), rgba(255, 255, 255, 0.035));
+      backdrop-filter: blur(16px) saturate(145%);
       color: var(--text-primary);
       cursor: pointer;
       text-align: left;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+      transition: background var(--transition-ui), border-color var(--transition-ui), box-shadow var(--transition-ui), transform var(--transition-ui);
     }
 
-    .playlist-card:hover, .playlist-card.active {
-      background: var(--bg-tertiary);
-      border-color: var(--border);
+    .playlist-card:hover {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-2px);
+    }
+
+    .playlist-card.active {
+      border-color: rgba(32, 216, 117, 0.55);
+      box-shadow: 0 0 0 1px rgba(32, 216, 117, 0.24), 0 10px 26px rgba(32, 216, 117, 0.11);
     }
 
     .playlist-cover {
@@ -393,14 +461,22 @@
       aspect-ratio: 1;
       align-items: center;
       justify-content: center;
-      border-radius: 5px;
-      font-size: 31px;
-      background: linear-gradient(140deg, #3d5a80, #1d3557);
+      border-radius: 12px;
+      color: rgba(255, 255, 255, 0.9);
+      background:
+        linear-gradient(145deg, rgba(58, 111, 170, 0.85), rgba(20, 43, 68, 0.86));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -22px 38px rgba(0, 0, 0, 0.18);
     }
 
-    .playlist-card:nth-child(2) .playlist-cover { background: linear-gradient(140deg, #734b6d, #2f1b36); }
-    .playlist-card:nth-child(3) .playlist-cover { background: linear-gradient(140deg, #466d58, #163d2a); }
-    .playlist-card:nth-child(4) .playlist-cover { background: linear-gradient(140deg, #76633a, #332c18); }
+    .playlist-cover .hero-icon {
+      width: 30px;
+      height: 30px;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.28));
+    }
+
+    .playlist-card:nth-child(2) .playlist-cover { background: linear-gradient(145deg, rgba(126, 88, 167, 0.82), rgba(39, 31, 62, 0.9)); }
+    .playlist-card:nth-child(3) .playlist-cover { background: linear-gradient(145deg, rgba(35, 151, 120, 0.72), rgba(18, 55, 49, 0.9)); }
+    .playlist-card:nth-child(4) .playlist-cover { background: linear-gradient(145deg, rgba(62, 113, 185, 0.78), rgba(31, 40, 65, 0.92)); }
 
     .playlist-name {
       display: block;
@@ -417,36 +493,40 @@
       align-items: center;
       justify-content: center;
       gap: 6px;
-      background: var(--bg-tertiary);
+      background: var(--glass-card);
       border: 1px solid var(--border);
       color: var(--text-primary);
       padding: 8px 14px;
-      border-radius: 6px;
+      border-radius: var(--radius-button);
       font-size: 13px;
       cursor: pointer;
-      transition: background 0.15s;
+      backdrop-filter: blur(14px) saturate(140%);
+      transition: background var(--transition-ui), border-color var(--transition-ui), color var(--transition-ui), transform var(--transition-ui), box-shadow var(--transition-ui);
       width: 100%;
     }
 
     .btn:hover {
-      background: var(--bg-hover);
+      background: var(--glass-card-hover);
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
     }
 
     .btn-primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #000;
+      background: linear-gradient(135deg, var(--accent), #7bf1b2);
+      border-color: rgba(32, 216, 117, 0.68);
+      color: #04120a;
       font-weight: 600;
+      box-shadow: 0 8px 22px rgba(32, 216, 117, 0.2);
     }
 
     .btn-primary:hover {
-      background: var(--accent-hover);
+      background: linear-gradient(135deg, var(--accent-hover), #8ff8bf);
     }
 
     .btn-danger {
-      background: var(--danger);
-      border-color: var(--danger);
-      color: #fff;
+      background: rgba(255, 100, 117, 0.12);
+      border-color: rgba(255, 100, 117, 0.34);
+      color: #ff9ca7;
     }
 
     /* ── Center Panel ── */
@@ -454,7 +534,7 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: var(--bg-primary);
+      background: rgba(5, 12, 17, 0.28);
       min-width: 0;
     }
 
@@ -463,7 +543,8 @@
       border-bottom: 1px solid var(--border);
       padding: 0 16px;
       gap: 4px;
-      background: var(--bg-secondary);
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(20px) saturate(140%);
     }
 
     #center-tabs .sort-wrapper {
@@ -473,27 +554,32 @@
     }
 
     .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 10px 16px;
       font-size: 13px;
       font-weight: 600;
       color: var(--text-secondary);
       cursor: pointer;
+      border: 1px solid transparent;
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
-      transition: color 0.15s;
+      border-radius: 10px 10px 0 0;
+      transition: color var(--transition-ui), background var(--transition-ui), border-color var(--transition-ui);
       background: none;
-      border-top: none;
-      border-left: none;
-      border-right: none;
     }
 
     .tab:hover {
       color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.055);
     }
 
     .tab.active {
       color: var(--text-primary);
       border-bottom-color: var(--accent);
+      background: rgba(32, 216, 117, 0.09);
+      box-shadow: inset 0 -1px 0 rgba(32, 216, 117, 0.5);
     }
 
     #center-content {
@@ -510,6 +596,9 @@
     }
 
     .panel-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-size: 14px;
       font-weight: 700;
     }
@@ -517,7 +606,7 @@
     .track-list {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
     }
 
     .track-item {
@@ -526,17 +615,40 @@
       gap: 12px;
       min-height: 78px;
       padding: 10px 12px;
-      background: var(--bg-secondary);
-      border: 1px solid transparent;
-      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-track);
+      backdrop-filter: blur(18px) saturate(145%);
       cursor: pointer;
-      transition: background 0.15s;
+      box-shadow: var(--shadow-card);
+      transition: background var(--transition-ui), border-color var(--transition-ui), box-shadow var(--transition-ui), transform var(--transition-ui);
       position: relative;
+      overflow: hidden;
+    }
+
+    .track-item::before {
+      position: absolute;
+      top: 10px;
+      bottom: 10px;
+      left: 0;
+      width: 3px;
+      border-radius: 0 999px 999px 0;
+      background: transparent;
+      content: '';
+      transition: background var(--transition-ui), box-shadow var(--transition-ui);
     }
 
     .track-item:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--border);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.055));
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .track-item.is-playing::before {
+      background: var(--accent);
+      box-shadow: 0 0 16px rgba(32, 216, 117, 0.56);
     }
 
     .track-item.dragging {
@@ -550,10 +662,11 @@
     .track-thumb {
       width: 58px;
       height: 58px;
-      border-radius: 6px;
+      border-radius: 10px;
       background: var(--bg-tertiary);
       object-fit: cover;
       flex-shrink: 0;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
     }
 
     .track-info {
@@ -566,7 +679,8 @@
 
     .track-title {
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.96);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -583,7 +697,7 @@
     .track-service {
       font-size: 11px;
       padding: 2px 6px;
-      border-radius: 4px;
+      border-radius: 999px;
       background: var(--bg-tertiary);
       color: var(--text-secondary);
       flex-shrink: 0;
@@ -617,24 +731,21 @@
       color: var(--text-muted);
       cursor: pointer;
       padding: 0;
-      border-radius: 4px;
+      border-radius: var(--radius-button);
       font-size: 14px;
       line-height: 1;
+      transition: background var(--transition-ui), border-color var(--transition-ui), color var(--transition-ui), transform var(--transition-ui);
     }
 
     .track-actions button:hover {
       color: var(--text-primary);
       background: var(--bg-hover);
-    }
-
-    .track-actions .track-more {
-      font-size: 19px;
-      letter-spacing: 1px;
+      border-color: var(--border-soft);
+      transform: translateY(-1px);
     }
 
     .track-actions .track-delete {
       border-color: var(--border);
-      font-size: 19px;
     }
 
     .track-actions .track-delete:hover {
@@ -656,14 +767,18 @@
       flex-shrink: 0;
       color: var(--text-muted);
       font-size: 20px;
+      border-radius: var(--radius-button);
+      transition: background var(--transition-ui), color var(--transition-ui), transform var(--transition-ui);
     }
 
     .track-favorite.is-favorite {
-      color: #ffd166;
+      color: var(--accent);
     }
 
     .track-favorite:hover {
-      color: #ffe29a;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--accent-hover);
+      transform: translateY(-1px);
     }
 
     .center-view { height: 100%; }
@@ -681,8 +796,11 @@
       margin-bottom: 18px;
       padding: 16px;
       border: 1px solid var(--border);
-      border-radius: 10px;
-      background: linear-gradient(120deg, var(--bg-secondary), var(--bg-primary));
+      border-radius: var(--radius-playlist);
+      background:
+        linear-gradient(120deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+      backdrop-filter: blur(20px) saturate(145%);
+      box-shadow: var(--shadow-card);
     }
 
     .playlist-hero-cover {
@@ -691,9 +809,15 @@
       height: 78px;
       align-items: center;
       justify-content: center;
-      border-radius: 8px;
-      background: linear-gradient(140deg, #3d5a80, #1d3557);
-      font-size: 34px;
+      border-radius: 14px;
+      background: linear-gradient(140deg, rgba(58, 111, 170, 0.86), rgba(20, 43, 68, 0.88));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 14px 30px rgba(0, 0, 0, 0.22);
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .playlist-hero-cover .hero-icon {
+      width: 36px;
+      height: 36px;
     }
 
     .playlist-hero-label { color: var(--text-secondary); font-size: 11px; }
@@ -704,15 +828,19 @@
       width: 100%;
       padding: 9px 11px;
       border: 1px solid var(--border);
-      border-radius: 7px;
+      border-radius: var(--radius-input);
       outline: none;
-      background: var(--bg-secondary);
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(16px) saturate(140%);
       color: var(--text-primary);
       font: inherit;
       font-size: 13px;
     }
 
-    .search-box:focus { border-color: var(--accent); }
+    .search-box:focus {
+      border-color: rgba(32, 216, 117, 0.64);
+      box-shadow: 0 0 0 3px rgba(32, 216, 117, 0.12);
+    }
 
     .audio-search-form {
       display: flex;
@@ -789,7 +917,8 @@
     /* ── Right Panel ── */
     #right-panel {
       width: var(--panel-right-width);
-      background: var(--bg-secondary);
+      background: var(--glass-panel);
+      backdrop-filter: blur(24px) saturate(145%);
       border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
@@ -846,8 +975,9 @@
     }
 
     .room-entry-tabs .btn.active {
-      border-color: var(--accent);
+      border-color: rgba(32, 216, 117, 0.58);
       color: var(--text-primary);
+      background: rgba(32, 216, 117, 0.12);
     }
 
     .room-entry-form {
@@ -862,16 +992,40 @@
       width: 100%;
       padding: 6px 8px;
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: var(--radius-input);
       outline: none;
-      background: var(--bg-tertiary);
+      background: rgba(255, 255, 255, 0.07);
       color: var(--text-primary);
       font: inherit;
       font-size: 11px;
     }
 
+    .room-entry-form select {
+      color-scheme: dark;
+      transition: border-color var(--transition-ui), box-shadow var(--transition-ui);
+    }
+
     .room-entry-form input:focus,
-    .room-entry-form select:focus { border-color: var(--accent); }
+    .room-entry-form select:focus {
+      border-color: rgba(32, 216, 117, 0.64);
+      box-shadow: 0 0 0 3px rgba(32, 216, 117, 0.12);
+    }
+
+    .room-entry-form select:hover {
+      border-color: rgba(32, 216, 117, 0.42);
+      box-shadow: 0 0 0 2px rgba(32, 216, 117, 0.08);
+    }
+
+    .room-entry-form select option {
+      background: #0e1a23;
+      color: var(--text-primary);
+    }
+
+    .room-entry-form select option:hover,
+    .room-entry-form select option:checked {
+      background: #1f6fd6;
+      color: #ffffff;
+    }
 
     .room-entry-form .btn {
       padding: 6px 8px;
@@ -888,6 +1042,16 @@
     .room-id-copy {
       flex: 1;
       justify-content: space-between;
+      border-radius: var(--radius-input);
+      background: rgba(255, 255, 255, 0.075);
+      font-family: 'SFMono-Regular', Consolas, monospace;
+    }
+
+    .room-id-copy > span:first-child,
+    .members-header > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     #sidebar-room-id {
@@ -900,6 +1064,7 @@
 
     .room-leave {
       color: #ff8591;
+      border-color: rgba(255, 100, 117, 0.22);
     }
 
     .room-leave:hover {
@@ -938,12 +1103,30 @@
       gap: 4px;
     }
 
+    .member-group-label::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--text-muted);
+      content: '';
+    }
+
+    .member-group-label.online::before {
+      background: var(--accent);
+      box-shadow: 0 0 10px rgba(32, 216, 117, 0.62);
+    }
+
     .member-item {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 5px 0;
+      padding: 5px 6px;
       font-size: 13px;
+      border-radius: 8px;
+    }
+
+    .member-item:hover {
+      background: rgba(255, 255, 255, 0.055);
     }
 
     .member-status {
@@ -953,7 +1136,10 @@
       flex-shrink: 0;
     }
 
-    .member-status.online { background: var(--accent); }
+    .member-status.online {
+      background: var(--accent);
+      box-shadow: 0 0 10px rgba(32, 216, 117, 0.7);
+    }
     .member-status.offline { background: var(--text-muted); }
 
     .member-name {
@@ -965,16 +1151,30 @@
 
     .member-badge {
       font-size: 10px;
-      padding: 1px 5px;
-      border-radius: 3px;
-      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border: 1px solid var(--border-soft);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
       color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .member-badge .hero-icon {
+      color: var(--accent);
+      width: 12px;
+      height: 12px;
     }
 
     #player-container {
       flex: 1;
       min-height: 0;
-      background: #000;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-track);
+      background: rgba(0, 0, 0, 0.45);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 36px rgba(0, 0, 0, 0.24);
+      overflow: hidden;
     }
 
     #youtube-player, #youtube-player iframe, #html-video-player {
@@ -1001,7 +1201,8 @@
       right: 0;
       bottom: 0;
       height: var(--control-height);
-      background: var(--bg-secondary);
+      background: rgba(8, 18, 25, 0.76);
+      backdrop-filter: blur(26px) saturate(150%);
       border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -1021,9 +1222,10 @@
     #now-playing-thumb {
       width: 48px;
       height: 48px;
-      border-radius: 4px;
+      border-radius: 10px;
       background: var(--bg-tertiary);
       object-fit: cover;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
     }
 
     #now-playing-info {
@@ -1066,14 +1268,15 @@
     }
 
     .control-btn {
+      width: 34px;
+      height: 34px;
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--text-secondary);
       cursor: pointer;
-      font-size: 20px;
-      padding: 4px;
+      padding: 0;
       border-radius: 50%;
-      transition: color 0.15s, transform 0.1s;
+      transition: background var(--transition-ui), border-color var(--transition-ui), color var(--transition-ui), transform var(--transition-ui);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1081,11 +1284,18 @@
 
     .control-btn:hover {
       color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-soft);
+      transform: translateY(-1px);
     }
 
     .control-btn.play {
-      font-size: 28px;
-      color: var(--text-primary);
+      width: 42px;
+      height: 42px;
+      color: #04120a;
+      background: linear-gradient(135deg, var(--accent), #8ff8bf);
+      border-color: rgba(32, 216, 117, 0.7);
+      box-shadow: 0 12px 28px rgba(32, 216, 117, 0.28);
     }
 
     .control-btn:active {
@@ -1118,8 +1328,9 @@
 
     input[type="range"]::-webkit-slider-runnable-track {
       height: 4px;
-      background: var(--bg-tertiary);
-      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 999px;
+      transition: background var(--transition-ui);
     }
 
     input[type="range"]::-webkit-slider-thumb {
@@ -1127,14 +1338,21 @@
       appearance: none;
       width: 12px;
       height: 12px;
-      background: var(--text-primary);
+      background: rgba(255, 255, 255, 0.88);
       border-radius: 50%;
       margin-top: -4px;
-      transition: background 0.15s;
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+      transition: background var(--transition-ui), box-shadow var(--transition-ui), transform var(--transition-ui);
+    }
+
+    input[type="range"]:hover::-webkit-slider-runnable-track {
+      background: rgba(255, 255, 255, 0.24);
     }
 
     input[type="range"]::-webkit-slider-thumb:hover {
       background: var(--accent);
+      box-shadow: 0 0 0 5px rgba(32, 216, 117, 0.16);
+      transform: scale(1.08);
     }
 
     #volume-section {
@@ -1145,26 +1363,36 @@
       gap: 6px;
     }
 
+    #volume-slider {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+    }
+
     /* ── Context Menu ── */
     #context-menu {
       position: fixed;
-      background: var(--bg-secondary);
+      background: rgba(14, 26, 35, 0.92);
+      backdrop-filter: blur(22px) saturate(145%);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-input);
       padding: 4px;
       min-width: 160px;
       z-index: 1000;
       display: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      box-shadow: var(--shadow-soft);
     }
 
     .context-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 8px 12px;
       font-size: 13px;
       color: var(--text-primary);
       cursor: pointer;
-      border-radius: 4px;
-      transition: background 0.1s;
+      border-radius: 8px;
+      transition: background var(--transition-ui), color var(--transition-ui);
     }
 
     .context-menu-item:hover {
@@ -1197,15 +1425,20 @@
     }
 
     .modal {
-      background: var(--bg-secondary);
-      border-radius: 10px;
+      background: rgba(14, 26, 35, 0.88);
+      backdrop-filter: blur(28px) saturate(150%);
+      border-radius: var(--radius-track);
       border: 1px solid var(--border);
       width: 420px;
       max-width: 90vw;
       overflow: hidden;
+      box-shadow: var(--shadow-soft);
     }
 
     .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       padding: 16px 20px;
       border-bottom: 1px solid var(--border);
       font-size: 16px;
@@ -1237,14 +1470,15 @@
       border: 1px solid var(--border);
       color: var(--text-primary);
       padding: 8px 10px;
-      border-radius: 6px;
+      border-radius: var(--radius-input);
       font-size: 13px;
       outline: none;
     }
 
     .form-group input:focus,
     .form-group select:focus {
-      border-color: var(--accent);
+      border-color: rgba(32, 216, 117, 0.64);
+      box-shadow: 0 0 0 3px rgba(32, 216, 117, 0.12);
     }
 
     .modal-actions {
@@ -1276,15 +1510,15 @@
       margin-bottom: 14px;
       padding: 4px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg-secondary);
+      border-radius: var(--radius-input);
+      background: rgba(255, 255, 255, 0.055);
     }
 
     .track-add-mode-button {
       flex: 1;
       min-height: 34px;
       border: 0;
-      border-radius: 6px;
+      border-radius: 8px;
       background: transparent;
       color: var(--text-secondary);
       font: inherit;
@@ -1295,7 +1529,7 @@
 
     .track-add-mode-button.active {
       background: var(--accent);
-      color: white;
+      color: #04120a;
     }
 
     .track-add-mode-panel[hidden] {
@@ -1351,20 +1585,24 @@
       width: 100%;
       padding: 9px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg-tertiary);
+      border-radius: var(--radius-track);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+      backdrop-filter: blur(16px) saturate(145%);
       color: var(--text-primary);
       text-align: left;
       cursor: pointer;
+      transition: background var(--transition-ui), border-color var(--transition-ui), box-shadow var(--transition-ui), transform var(--transition-ui);
     }
 
     .track-candidate:hover:not(:disabled) {
       background: var(--bg-hover);
+      transform: translateY(-1px);
     }
 
     .track-candidate.selected {
       border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent);
+      box-shadow: 0 0 0 1px rgba(32, 216, 117, 0.58), 0 0 20px rgba(32, 216, 117, 0.12);
     }
 
     .track-candidate:disabled {
@@ -1376,7 +1614,7 @@
       width: 52px;
       height: 52px;
       flex: 0 0 52px;
-      border-radius: 5px;
+      border-radius: 10px;
       object-fit: cover;
       background: #333;
     }
@@ -1413,7 +1651,7 @@
       margin: 0;
       padding: 12px;
       border: 1px dashed var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-input);
       color: var(--text-secondary);
       font-size: 12px;
     }
@@ -1424,8 +1662,9 @@
       margin: 0;
       padding: 14px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg-secondary);
+      border-radius: var(--radius-input);
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(16px) saturate(140%);
       color: var(--text-secondary);
       font-size: 12px;
     }
@@ -1505,13 +1744,14 @@
     }
 
     .toast {
-      background: var(--bg-secondary);
+      background: rgba(14, 26, 35, 0.9);
+      backdrop-filter: blur(20px) saturate(145%);
       border: 1px solid var(--border);
       color: var(--text-primary);
       padding: 10px 16px;
-      border-radius: 6px;
+      border-radius: var(--radius-input);
       font-size: 13px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      box-shadow: var(--shadow-soft);
       animation: toastIn 0.2s ease;
       pointer-events: auto;
     }
@@ -1541,13 +1781,13 @@
 <body>
   <!-- Top Bar -->
   <header id="top-bar">
-    <div class="brand">🎵 MusicShare</div>
+    <div class="brand"><span data-hero-icon="musical-note"></span><span>MusicShare</span></div>
     <div class="workspace-controls" aria-label="表示する楽曲一覧">
       <div class="workspace-switch" role="group" aria-label="楽曲一覧の切替">
         <button class="workspace-tab" data-workspace="playlist" type="button">プレイリスト</button>
         <button class="workspace-tab active" data-workspace="queue" type="button">共有楽曲キュー</button>
       </div>
-      <button class="btn btn-primary header-action" id="btn-header-add-track" type="button">＋ 追加</button>
+      <button class="btn btn-primary header-action" id="btn-header-add-track" type="button"><span data-hero-icon="plus"></span><span>追加</span></button>
     </div>
     <div class="top-actions">
     </div>
@@ -1561,21 +1801,21 @@
         <span class="sidebar-title">プレイリスト</span>
         <div class="sidebar-header-actions">
           <span class="sidebar-count">4件</span>
-          <button class="btn-icon sidebar-toggle" id="btn-toggle-left-sidebar" type="button" title="左サイドバーを閉じる" aria-label="左サイドバーを閉じる" aria-expanded="true">◀</button>
+          <button class="btn-icon sidebar-toggle" id="btn-toggle-left-sidebar" type="button" title="左サイドバーを閉じる" aria-label="左サイドバーを閉じる" aria-expanded="true"><span data-hero-icon="chevron-left"></span></button>
         </div>
       </div>
       <div class="playlist-grid" id="playlist-grid">
         <button class="playlist-card active" data-playlist="favorites" data-playlist-name="お気に入り" type="button">
-          <span class="playlist-cover">♥</span><span class="playlist-name">お気に入り</span>
+          <span class="playlist-cover" data-playlist-icon="heart-solid"><span data-hero-icon="heart-solid"></span></span><span class="playlist-name">お気に入り</span>
         </button>
         <button class="playlist-card" data-playlist="work" data-playlist-name="作業用BGM" type="button">
-          <span class="playlist-cover">☕</span><span class="playlist-name">作業用BGM</span>
+          <span class="playlist-cover" data-playlist-icon="musical-note"><span data-hero-icon="musical-note"></span></span><span class="playlist-name">作業用BGM</span>
         </button>
         <button class="playlist-card" data-playlist="drive" data-playlist-name="ドライブ用" type="button">
-          <span class="playlist-cover">🚗</span><span class="playlist-name">ドライブ用</span>
+          <span class="playlist-cover" data-playlist-icon="queue-list"><span data-hero-icon="queue-list"></span></span><span class="playlist-name">ドライブ用</span>
         </button>
         <button class="playlist-card" data-playlist="recent" data-playlist-name="最近追加した曲" type="button">
-          <span class="playlist-cover">♫</span><span class="playlist-name">最近追加した曲</span>
+          <span class="playlist-cover" data-playlist-icon="clock"><span data-hero-icon="clock"></span></span><span class="playlist-name">最近追加した曲</span>
         </button>
       </div>
     </aside>
@@ -1586,7 +1826,7 @@
       <div id="center-content">
         <div id="playlist-center-panel" class="center-view">
           <div class="playlist-hero">
-            <div class="playlist-hero-cover" id="playlist-hero-cover">♥</div>
+            <div class="playlist-hero-cover" id="playlist-hero-cover" data-playlist-icon="heart-solid"><span data-hero-icon="heart-solid"></span></div>
             <div>
               <div class="playlist-hero-label">プレイリスト</div>
               <div class="playlist-hero-title" id="playlist-center-title">お気に入り</div>
@@ -1597,11 +1837,11 @@
         </div>
         <div id="shared-center-panel" class="center-view">
           <div id="center-tabs">
-            <button class="tab active" data-tab="queue" type="button">🎵 共有キュー</button>
-            <button class="tab" data-tab="history" type="button">📜 履歴</button>
-            <button class="tab" data-tab="search" type="button">🔍 検索</button>
+            <button class="tab active" data-tab="queue" type="button"><span data-hero-icon="queue-list"></span> 共有キュー</button>
+            <button class="tab" data-tab="history" type="button"><span data-hero-icon="clock"></span> 履歴</button>
+            <button class="tab" data-tab="search" type="button"><span data-hero-icon="magnifying-glass"></span> 検索</button>
             <div class="sort-wrapper">
-              <button class="btn header-action" id="btn-sort" type="button" aria-expanded="false">↕ ソート</button>
+              <button class="btn header-action" id="btn-sort" type="button" aria-expanded="false"><span data-hero-icon="bars-arrow-down"></span><span>ソート</span></button>
               <div id="sort-menu" role="menu" aria-label="共有キューをソート">
                 <button class="sort-menu-item" data-sort="title-asc" type="button">曲名（A → Z）</button>
                 <button class="sort-menu-item" data-sort="title-desc" type="button">曲名（Z → A）</button>
@@ -1614,7 +1854,7 @@
           <div id="queue-panel" class="tab-panel">
           <div id="spotify-auth-banner" style="display:none;margin-bottom:12px;padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;align-items:center;justify-content:space-between;gap:12px;">
             <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:20px;">🎵</span>
+              <span data-hero-icon="musical-note"></span>
               <div style="display:flex;flex-direction:column;gap:2px;">
                 <span id="spotify-auth-label" style="font-size:13px;font-weight:600;color:var(--text-primary);">Spotify にログインしてください</span>
                 <span id="spotify-auth-status" style="font-size:11px;color:var(--text-secondary);">未認証</span>
@@ -1623,18 +1863,18 @@
             <button class="btn btn-primary" id="btn-spotify-login" style="width:auto;padding:6px 16px;font-size:12px;">Spotify にログイン</button>
           </div>
           <div class="panel-header">
-            <span class="panel-title">🎵 再生待ちのキュー (<span id="queue-count">0</span>曲)</span>
+            <span class="panel-title"><span data-hero-icon="queue-list"></span> 再生待ちのキュー (<span id="queue-count">0</span>曲)</span>
           </div>
           <div class="track-list" id="queue-list"></div>
         </div>
           <div id="history-panel" class="tab-panel" style="display:none;">
             <div class="panel-header">
-              <span class="panel-title">📜 再生履歴</span>
+              <span class="panel-title"><span data-hero-icon="clock"></span> 再生履歴</span>
             </div>
             <div class="track-list" id="history-list"></div>
           </div>
           <div id="search-panel" class="tab-panel" style="display:none;">
-            <div class="panel-header"><span class="panel-title">🔍 Audio-only 音源を検索</span></div>
+            <div class="panel-header"><span class="panel-title"><span data-hero-icon="magnifying-glass"></span> Audio-only 音源を検索</span></div>
             <form class="audio-search-form" id="audio-search-form">
               <input class="search-box" id="search-query" type="search" placeholder="許可済み音源を検索" />
               <button class="btn btn-primary audio-search-submit" type="submit">検索</button>
@@ -1668,7 +1908,7 @@
             <div class="room-name" id="sidebar-room-name">ルーム</div>
           </div>
           <div class="room-header-actions">
-            <button class="btn-icon sidebar-toggle" id="btn-toggle-right-sidebar" type="button" title="右サイドバーを閉じる" aria-label="右サイドバーを閉じる" aria-expanded="true">▶</button>
+            <button class="btn-icon sidebar-toggle" id="btn-toggle-right-sidebar" type="button" title="右サイドバーを閉じる" aria-label="右サイドバーを閉じる" aria-expanded="true"><span data-hero-icon="chevron-right"></span></button>
           </div>
         </div>
         <div id="room-entry">
@@ -1681,7 +1921,7 @@
             <input id="input-sidebar-user-name-create" type="text" placeholder="あなたの名前" />
             <select id="select-sidebar-player-type" aria-label="再生プレイヤー">
               <option value="youtube">YouTube プレイヤー</option>
-              <option value="html-video">videoタグで再生</option>
+              <option value="html-video" selected>videoタグで再生</option>
             </select>
             <button class="btn btn-primary" type="submit">ルームを作成</button>
           </form>
@@ -1693,14 +1933,14 @@
         </div>
         <div class="room-actions" id="room-details" style="display:none;">
           <button class="btn room-id-copy" id="btn-copy-room-id" type="button" disabled>
-            <span>IDをコピー</span><span id="sidebar-room-id">------</span>
+            <span><span data-hero-icon="document-duplicate"></span> IDをコピー</span><span id="sidebar-room-id">------</span>
           </button>
-          <button class="btn room-leave" id="btn-leave-room" type="button" disabled>退出</button>
+          <button class="btn room-leave" id="btn-leave-room" type="button" disabled><span data-hero-icon="arrow-right-on-rectangle"></span><span>退出</span></button>
         </div>
       </section>
       <div id="members-section">
         <div class="members-header">
-          <span>👥 メンバー (<span id="member-count">0</span>)</span>
+          <span><span data-hero-icon="user-group"></span> メンバー (<span id="member-count">0</span>)</span>
         </div>
         <div id="members-list"></div>
       </div>
@@ -1719,9 +1959,9 @@
     </div>
     <div id="playback-controls">
       <div id="control-buttons">
-        <button class="control-btn" id="btn-prev" title="Previous">⏮️</button>
-        <button class="control-btn play" id="btn-play-pause" title="Play/Pause">▶️</button>
-        <button class="control-btn" id="btn-next" title="Next">⏭️</button>
+        <button class="control-btn" id="btn-prev" title="Previous" aria-label="前へ"><span data-hero-icon="backward"></span></button>
+        <button class="control-btn play" id="btn-play-pause" title="Play/Pause" aria-label="再生"><span data-hero-icon="play-solid"></span></button>
+        <button class="control-btn" id="btn-next" title="Next" aria-label="次へ"><span data-hero-icon="forward"></span></button>
       </div>
       <div id="seek-bar-container">
         <span class="time-label" id="time-current">0:00</span>
@@ -1730,7 +1970,7 @@
       </div>
     </div>
     <div id="volume-section">
-      <button class="btn-icon" id="btn-mute">🔊</button>
+      <button class="btn-icon" id="btn-mute" title="ミュート" aria-label="ミュート"><span data-hero-icon="speaker-wave"></span></button>
       <input type="range" id="volume-slider" min="0" max="100" value="80" />
     </div>
   </footer>
@@ -1741,7 +1981,7 @@
   <!-- Add Track Modal (inline) -->
   <div id="modal-overlay-track" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:none;align-items:center;justify-content:center;">
     <div class="modal track-add-modal">
-      <div class="modal-header">➕ 曲を追加</div>
+      <div class="modal-header"><span data-hero-icon="plus"></span> 曲を追加</div>
       <div class="modal-body">
         <div class="track-add-mode-panel" id="track-add-url-panel">
           <div class="form-group">
@@ -1752,7 +1992,7 @@
             <label for="input-track-search-query">検索コマンド</label>
             <div class="track-search-row">
               <input type="text" id="input-track-search-query" placeholder="URL解析後に検索語が入ります" />
-              <button class="btn track-search-button" id="btn-track-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索">⌕</button>
+              <button class="btn track-search-button" id="btn-track-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索"><span data-hero-icon="magnifying-glass"></span></button>
             </div>
           </div>
           <div id="track-candidates" class="track-candidates">
