@@ -28,17 +28,28 @@ const execFileAsync = promisify(execFile);
 
 /**
  * Packaged Windows builds carry their own yt-dlp binary so recipients do not
- * need to install it or configure PATH. Development keeps using PATH, which
- * makes local updates and debugging straightforward.
+ * need to install it or configure PATH. macOS/Linux packaged builds prefer a
+ * bundled Unix binary when present, then fall back to common install paths and
+ * finally PATH.
  */
 function getYtDlpCommand(): string {
   if (!app.isPackaged) return 'yt-dlp';
 
-  const bundledBinary = path.join(process.resourcesPath, 'tools', 'yt-dlp.exe');
-  if (!fs.existsSync(bundledBinary)) {
-    throw new Error(`Bundled yt-dlp was not found: ${bundledBinary}`);
+  if (process.platform === 'win32') {
+    const bundledBinary = path.join(process.resourcesPath, 'tools', 'yt-dlp.exe');
+    if (!fs.existsSync(bundledBinary)) {
+      throw new Error(`Bundled yt-dlp was not found: ${bundledBinary}`);
+    }
+    return bundledBinary;
   }
-  return bundledBinary;
+
+  const candidates = [
+    path.join(process.resourcesPath, 'tools', 'yt-dlp'),
+    '/opt/homebrew/bin/yt-dlp',
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || 'yt-dlp';
 }
 const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 const MAX_CANDIDATES_PER_SERVICE = 6;

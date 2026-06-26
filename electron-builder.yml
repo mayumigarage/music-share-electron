@@ -6,8 +6,6 @@ files:
   - dist/main/**/*
   - dist/renderer/**/*
 extraResources:
-  - from: tools/yt-dlp.exe
-    to: tools/yt-dlp.exe
   - from: cookies.txt
     to: cookies.txt
 
@@ -16,6 +14,9 @@ electronDist: ./node_modules/electron/dist
 
 # バージョン文字列に "+wvcus" が含まれるため、winCodeSign/rcedit のダウンロードが失敗するのを回避
 win:
+  extraResources:
+    - from: tools/yt-dlp.exe
+      to: tools/yt-dlp.exe
   signAndEditExecutable: false
   target:
     - target: nsis

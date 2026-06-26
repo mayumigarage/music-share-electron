@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.server.json && npx esbuild src/renderer/renderer.ts --bundle --outfile=dist/renderer/renderer.js --platform=browser --format=iife && tsc -p tsconfig.main.json && shx cp src/renderer/index.html dist/renderer/index.html",
     "build:server": "tsc -p tsconfig.server.json",
     "server:prod": "node dist/server/server/server.js",
-    "dist": "npm run build && electron-builder --win",
+    "dist": "npm run dist:win",
+    "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "lint": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "jest"
