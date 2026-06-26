@@ -12,6 +12,7 @@ export enum MusicServiceType {
   YouTube = 'youtube',
   Spotify = 'spotify',
   AppleMusic = 'applemusic',
+  LocalAudio = 'localaudio',
 }
 
 /** Room playback modes */
@@ -75,6 +76,22 @@ export interface SpotifyTokenSet {
   refreshToken: string;
   /** Unix timestamp (ms) when the access token expires */
   expiresAt: number;
+}
+
+/** Metadata returned by main when resolving a local audio media ID. */
+export interface AudioStreamMetadata {
+  title: string;
+  artist: string;
+  url: string;
+}
+
+/** Search result for a local audio track resolved in the main process. */
+export interface LocalAudioSearchResult {
+  id: string;
+  title: string;
+  artist: string;
+  thumbnailUrl: string;
+  durationSeconds: number | null;
 }
 
 /** Represents a room (the core aggregation root) */

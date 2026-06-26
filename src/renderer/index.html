@@ -1259,6 +1259,38 @@
       overflow: auto;
     }
 
+    .track-add-mode-switch {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+    }
+
+    .track-add-mode-button {
+      flex: 1;
+      min-height: 34px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-secondary);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .track-add-mode-button.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .track-add-mode-panel[hidden] {
+      display: none;
+    }
+
     .track-search-row {
       display: flex;
       gap: 8px;
@@ -1276,7 +1308,8 @@
       font-size: 16px;
     }
 
-    #track-candidates {
+    #track-candidates,
+    .track-candidates {
       display: none;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 18px;
@@ -1370,8 +1403,13 @@
       font-size: 12px;
     }
 
+    #local-audio-preview {
+      display: none;
+    }
+
     @media (max-width: 640px) {
-      #track-candidates { grid-template-columns: 1fr; }
+      #track-candidates,
+      .track-candidates { grid-template-columns: 1fr; }
     }
 
     .mode-options {
@@ -1662,26 +1700,59 @@
     <div class="modal track-add-modal">
       <div class="modal-header">➕ 曲を追加</div>
       <div class="modal-body">
-        <div class="form-group">
-          <label>URL</label>
-          <input type="text" id="input-track-url" placeholder="https://..." />
+        <div class="track-add-mode-switch" role="tablist" aria-label="曲追加方法">
+          <button class="track-add-mode-button active" id="btn-track-mode-url" data-track-add-mode="url" type="button" role="tab" aria-selected="true" aria-controls="track-add-url-panel">URL解析</button>
+          <button class="track-add-mode-button" id="btn-track-mode-spotify" data-track-add-mode="spotify" type="button" role="tab" aria-selected="false" aria-controls="track-add-spotify-panel">Spotify URL</button>
+          <button class="track-add-mode-button" id="btn-track-mode-local" data-track-add-mode="local" type="button" role="tab" aria-selected="false" aria-controls="track-add-local-panel">ローカル音源ID</button>
         </div>
-        <div class="form-group">
-          <label for="input-track-search-query">検索コマンド</label>
-          <div class="track-search-row">
-            <input type="text" id="input-track-search-query" placeholder="URL解析後に検索語が入ります" />
-            <button class="btn track-search-button" id="btn-track-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索">⌕</button>
+        <div class="track-add-mode-panel" id="track-add-url-panel" role="tabpanel" aria-labelledby="btn-track-mode-url">
+          <div class="form-group">
+            <label>URL</label>
+            <input type="text" id="input-track-url" placeholder="https://..." />
+          </div>
+          <div class="form-group">
+            <label for="input-track-search-query">検索コマンド</label>
+            <div class="track-search-row">
+              <input type="text" id="input-track-search-query" placeholder="URL解析後に検索語が入ります" />
+              <button class="btn track-search-button" id="btn-track-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索">⌕</button>
+            </div>
+          </div>
+          <div id="track-candidates" class="track-candidates">
+            <section class="track-candidate-group" aria-labelledby="youtube-candidates-title">
+              <h3 class="track-candidate-group-title" id="youtube-candidates-title">YouTube</h3>
+              <div class="track-candidate-list" id="track-candidate-youtube"></div>
+            </section>
+            <section class="track-candidate-group" aria-labelledby="youtube-music-candidates-title">
+              <h3 class="track-candidate-group-title" id="youtube-music-candidates-title">YouTube Music</h3>
+              <div class="track-candidate-list" id="track-candidate-youtube-music"></div>
+            </section>
           </div>
         </div>
-        <div id="track-candidates">
-          <section class="track-candidate-group" aria-labelledby="youtube-candidates-title">
-            <h3 class="track-candidate-group-title" id="youtube-candidates-title">YouTube</h3>
-            <div class="track-candidate-list" id="track-candidate-youtube"></div>
-          </section>
-          <section class="track-candidate-group" aria-labelledby="youtube-music-candidates-title">
-            <h3 class="track-candidate-group-title" id="youtube-music-candidates-title">YouTube Music</h3>
-            <div class="track-candidate-list" id="track-candidate-youtube-music"></div>
-          </section>
+        <div class="track-add-mode-panel" id="track-add-spotify-panel" role="tabpanel" aria-labelledby="btn-track-mode-spotify" hidden>
+          <div class="form-group">
+            <label for="input-track-spotify-url">Spotify URL</label>
+            <input type="text" id="input-track-spotify-url" placeholder="https://open.spotify.com/track/..." />
+          </div>
+          <div class="form-group">
+            <label for="input-track-spotify-search-query">検索コマンド</label>
+            <div class="track-search-row">
+              <input type="text" id="input-track-spotify-search-query" placeholder="Spotify URL解析後に検索語が入ります" />
+              <button class="btn track-search-button" id="btn-track-spotify-search" type="button" title="編集した検索コマンドで再検索" aria-label="編集した検索コマンドで再検索">⌕</button>
+            </div>
+          </div>
+          <div id="spotify-track-candidates" class="track-candidates">
+            <section class="track-candidate-group" aria-labelledby="spotify-local-candidates-title">
+              <h3 class="track-candidate-group-title" id="spotify-local-candidates-title">ローカルトラック</h3>
+              <div class="track-candidate-list" id="track-candidate-spotify-local"></div>
+            </section>
+          </div>
+        </div>
+        <div class="track-add-mode-panel" id="track-add-local-panel" role="tabpanel" aria-labelledby="btn-track-mode-local" hidden>
+          <div class="form-group">
+            <label for="input-track-media-id">メディアID</label>
+            <input type="text" id="input-track-media-id" placeholder="local-track-001" />
+          </div>
+          <div class="track-candidate-list" id="local-audio-preview"></div>
         </div>
       </div>
       <div class="modal-actions">

@@ -12,7 +12,7 @@
  * - contextIsolation: true
  */
 
-import type { MusicServiceType } from './models';
+import type { AudioStreamMetadata, LocalAudioSearchResult, MusicServiceType } from './models';
 
 // ============================================================================
 // Player Message Types
@@ -138,6 +138,18 @@ export interface ElectronAPI {
    * @returns The resolved track metadata or an error
    */
   resolveTrack: (url: string, options?: TrackResolveOptions) => Promise<TrackSearchResult>;
+
+  /**
+   * Resolve a local media ID to audio metadata and a playback URL.
+   * The main process owns local-file lookup and streaming concerns.
+   */
+  getAudioStream: (mediaId: string) => Promise<AudioStreamMetadata>;
+
+  /**
+   * Search local audio tracks from a renderer-supplied query.
+   * The main process owns local-file indexing and lookup concerns.
+   */
+  searchLocalAudioTracks: (query: string) => Promise<LocalAudioSearchResult[]>;
 
   /**
    * Subscribe to metadata and yt-dlp command diagnostics emitted during

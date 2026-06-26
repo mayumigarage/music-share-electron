@@ -7,6 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AudioStreamMetadata, LocalAudioSearchResult } from '../shared/models';
 import type {
   ElectronAPI,
   TrackResolverDebugLog,
@@ -31,6 +32,20 @@ const api: ElectronAPI = {
    */
   resolveTrack: (url: string, options) => {
     return ipcRenderer.invoke('resolve-track', url, options) as Promise<TrackSearchResult>;
+  },
+
+  /**
+   * Resolve a local media ID to audio metadata and a playback URL.
+   */
+  getAudioStream: (mediaId: string) => {
+    return ipcRenderer.invoke('get-audio-stream', mediaId) as Promise<AudioStreamMetadata>;
+  },
+
+  /**
+   * Search local audio tracks through the main process.
+   */
+  searchLocalAudioTracks: (query: string) => {
+    return ipcRenderer.invoke('search-local-audio', query) as Promise<LocalAudioSearchResult[]>;
   },
 
   /** Subscribe to real-time track-resolution diagnostics from Main. */

@@ -6,7 +6,8 @@
 export declare enum MusicServiceType {
     YouTube = "youtube",
     Spotify = "spotify",
-    AppleMusic = "applemusic"
+    AppleMusic = "applemusic",
+    LocalAudio = "localaudio"
 }
 /** Room playback modes */
 export declare enum RoomMode {
@@ -19,6 +20,7 @@ export declare enum RoomMode {
 export interface Track {
     id: string;
     url: string;
+    resolvedVideoId: string | null;
     title: string;
     artist: string;
     thumbnailUrl: string;
@@ -51,6 +53,20 @@ export interface TrackHistory {
     track: Track;
     /** Unix timestamp (ms) */
     playedAt: number;
+}
+/** Metadata returned by main when resolving a local audio media ID. */
+export interface AudioStreamMetadata {
+    title: string;
+    artist: string;
+    url: string;
+}
+/** Search result for a local audio track resolved in the main process. */
+export interface LocalAudioSearchResult {
+    id: string;
+    title: string;
+    artist: string;
+    thumbnailUrl: string;
+    durationSeconds: number | null;
 }
 /** Represents a room (the core aggregation root) */
 export interface Room {

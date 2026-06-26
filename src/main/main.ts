@@ -7,12 +7,13 @@
  *           Windows must be created after the CDM signals readiness.
  */
 
-import { app } from 'electron';
+import { app, ipcMain } from 'electron';
 import * as path from 'path';
 import { initializeCrashHandler } from './crash-handler';
 import { WindowManager } from './window-manager';
 import { startRendererServer, stopRendererServer } from './renderer-server';
 import { SpotifyAuthManager } from './spotify-auth';
+import type { AudioStreamMetadata, LocalAudioSearchResult } from '../shared/models';
 
 // Allow media playback without user gesture (required for programmatic
 // player control in the WebContentsView).
@@ -29,6 +30,56 @@ initializeCrashHandler();
 let windowManager: WindowManager | null = null;
 let rendererServerUrl: string | null = null;
 const spotifyAuthManager = new SpotifyAuthManager();
+
+function resolveAudioStreamPlaceholder(mediaId: string): AudioStreamMetadata {
+  const normalizedMediaId = mediaId.trim();
+  if (!normalizedMediaId) {
+    throw new TypeError('mediaId must be a non-empty string');
+  }
+
+  return {
+    title: `Local Audio ${normalizedMediaId}`,
+    artist: 'Unknown Artist',
+    url: `musicshare://local-audio/${encodeURIComponent(normalizedMediaId)}`,
+  };
+}
+
+function searchLocalAudioPlaceholder(query: string): LocalAudioSearchResult[] {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const idBase = normalizedQuery
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'local-audio';
+
+  return [
+    {
+      id: `local-${idBase}`,
+      title: normalizedQuery,
+      artist: 'Unknown Artist',
+      thumbnailUrl: '',
+      durationSeconds: null,
+    },
+  ];
+}
+
+ipcMain.handle('get-audio-stream', async (_event, mediaId: unknown): Promise<AudioStreamMetadata> => {
+  if (typeof mediaId !== 'string') {
+    throw new TypeError('mediaId must be a string');
+  }
+
+  return resolveAudioStreamPlaceholder(mediaId);
+});
+
+ipcMain.handle('search-local-audio', async (_event, query: unknown): Promise<LocalAudioSearchResult[]> => {
+  if (typeof query !== 'string') {
+    throw new TypeError('query must be a string');
+  }
+
+  return searchLocalAudioPlaceholder(query);
+});
 
 // Register custom protocol handler for OAuth callbacks.
 if (app.isPackaged) {
