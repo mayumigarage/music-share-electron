@@ -1,21 +1,9 @@
 /**
- * MusicShare — Authorized audio-only catalog
- *
- * This module intentionally resolves only audio URLs that the application owner
- * has explicitly configured. It does not inspect provider pages, extract media
- * streams, or proxy audio bytes through the server.
- *
- * Configure with MUSICSHARE_AUDIO_CATALOG_JSON, for example:
- * [
- *   {
- *     "id": "demo-track",
- *     "title": "Demo Track",
- *     "artist": "MusicShare",
- *     "audioUrl": "https://cdn.example.com/audio/demo-track.opus",
- *     "thumbnailUrl": "https://cdn.example.com/audio/demo-track.jpg"
- *   }
- * ]
+ * MusicShare — YouTube Backend via play-dl
+ * (AIのブロックリストを排除し、play-dlによるリアルタイム抽出に差し替え)
  */
+
+import play from 'play-dl';
 
 export interface AudioCatalogItem {
   id: string;
@@ -34,110 +22,72 @@ export interface AudioSearchResult {
   durationSeconds?: number;
 }
 
-const BLOCKED_HOST_PATTERNS = [
-  /(^|\.)youtube\.com$/i,
-  /(^|\.)youtu\.be$/i,
-  /(^|\.)youtube-nocookie\.com$/i,
-  /(^|\.)googlevideo\.com$/i,
-];
-
-function parseCatalog(): AudioCatalogItem[] {
-  const raw = process.env.MUSICSHARE_AUDIO_CATALOG_JSON;
-  if (!raw) return [];
+/**
+ * 1. 検索用エンドポイント (/api/search-audio?q=キーワード) の実体
+ */
+export async function searchAudioCatalog(query: string): Promise<AudioSearchResult[]> {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
 
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      console.warn('[AudioCatalog] MUSICSHARE_AUDIO_CATALOG_JSON must be a JSON array.');
-      return [];
-    }
-
-    return parsed.flatMap((item) => {
-      const normalized = normalizeCatalogItem(item);
-      return normalized ? [normalized] : [];
-    });
+    // YouTubeで動画を検索 (最大10件取得)
+    const searchResults = await play.search(normalizedQuery, { limit: 10, source: { youtube: 'video' } });
+    
+    return searchResults.map((video) => ({
+      id: video.id || '',
+      title: video.title || 'Unknown Title',
+      artist: video.channel?.name || 'Unknown Artist',
+      thumbnailUrl: video.thumbnails[0]?.url || '',
+      durationSeconds: video.durationInSec,
+    }));
   } catch (error) {
-    console.warn('[AudioCatalog] Failed to parse MUSICSHARE_AUDIO_CATALOG_JSON:', error);
+    console.error('[YouTube Search] Failed:', error);
     return [];
   }
 }
 
-function normalizeCatalogItem(value: unknown): AudioCatalogItem | null {
-  if (!value || typeof value !== 'object') return null;
-
-  const item = value as Record<string, unknown>;
-  const id = typeof item.id === 'string' ? item.id.trim() : '';
-  const title = typeof item.title === 'string' ? item.title.trim() : '';
-  const audioUrl = typeof item.audioUrl === 'string' ? item.audioUrl.trim() : '';
-  const artist = typeof item.artist === 'string' ? item.artist.trim() : undefined;
-  const thumbnailUrl = typeof item.thumbnailUrl === 'string' ? item.thumbnailUrl.trim() : undefined;
-  const durationSeconds = typeof item.durationSeconds === 'number' && Number.isFinite(item.durationSeconds)
-    ? item.durationSeconds
-    : undefined;
-
-  if (!id || !title || !audioUrl) return null;
-  if (!isAllowedAudioUrl(audioUrl)) return null;
-  if (thumbnailUrl && !isHttpUrl(thumbnailUrl)) return null;
-
-  return {
-    id,
-    title,
-    artist,
-    audioUrl,
-    thumbnailUrl,
-    durationSeconds,
-  };
-}
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
-
-function isAllowedAudioUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
-    return !BLOCKED_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname));
-  } catch {
-    return false;
-  }
-}
-
-function toSearchResult(item: AudioCatalogItem): AudioSearchResult {
-  return {
-    id: item.id,
-    title: item.title,
-    artist: item.artist,
-    thumbnailUrl: item.thumbnailUrl,
-    durationSeconds: item.durationSeconds,
-  };
-}
-
-export function searchAudioCatalog(query: string): AudioSearchResult[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  const catalog = parseCatalog();
-
-  if (!normalizedQuery) {
-    return catalog.slice(0, 25).map(toSearchResult);
-  }
-
-  return catalog
-    .filter((item) => {
-      const searchable = `${item.title} ${item.artist ?? ''} ${item.id}`.toLowerCase();
-      return searchable.includes(normalizedQuery);
-    })
-    .slice(0, 25)
-    .map(toSearchResult);
-}
-
-export function resolveAuthorizedAudio(sourceId: string): AudioCatalogItem | null {
+/**
+ * 2. ストリームURL取得用 (/api/get-audio-stream?sourceId=動画ID) の実体
+ */
+export async function resolveAuthorizedAudio(sourceId: string): Promise<AudioCatalogItem | null> {
   const normalizedId = sourceId.trim();
   if (!normalizedId) return null;
 
-  return parseCatalog().find((item) => item.id === normalizedId) ?? null;
+  try {
+    const videoUrl = `https://www.youtube.com/watch?v=${normalizedId}`;
+
+    // 1. まず動画の詳細情報をしっかりと取得
+    const videoInfo = await play.video_info(videoUrl);
+    const details = videoInfo.video_details;
+
+    // 2. videoInfo の中から、条件に合う「最高音質の音声ストリームURL」を直接探す
+    // quality: 2 に相当する、ビットレートが最も高い音声のみのフォーマット（audio/webm など）を抽出します
+    const audioFormats = videoInfo.format.filter(f => f.mimeType?.startsWith('audio/'));
+    
+    // ビットレート順に並び替えて、一番高いものを取得
+    const bestAudioFormat = audioFormats.sort((a, b) => {
+      const bitRateA = a.bitrate ? parseInt(String(a.bitrate), 10) : 0;
+      const bitRateB = b.bitrate ? parseInt(String(b.bitrate), 10) : 0;
+      return bitRateB - bitRateA;
+    })[0];
+
+    // 万が一フォーマットが見つからなければ、一番最後のフォーマットのURLをフォールバックにする
+    const directAudioUrl = bestAudioFormat?.url || videoInfo.format[videoInfo.format.length - 1]?.url;
+
+    if (!directAudioUrl) {
+      throw new Error('Streaming URL could not be found in video formats.');
+    }
+
+    return {
+      id: normalizedId,
+      title: details.title || 'Unknown Title',
+      artist: details.channel?.name || 'Unknown Artist',
+      audioUrl: directAudioUrl, // 👈 これで完全に型エラーが消え、安全にURLが渡せます！
+      thumbnailUrl: details.thumbnails[0]?.url || '',
+      durationSeconds: details.durationInSec,
+    };
+  } catch (error) {
+    console.error('[YouTube Stream] Failed to resolve:', error);
+    return null;
+  }
 }

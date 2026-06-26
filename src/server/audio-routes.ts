@@ -41,12 +41,12 @@ export async function handleAudioRoute(
 
   if (requestUrl.pathname === '/api/search-audio') {
     const query = requestUrl.searchParams.get('q') ?? '';
-    sendJson(response, 200, { results: searchAudioCatalog(query) });
+    sendJson(response, 200, { results: await searchAudioCatalog(query) });
     return true;
   }
 
   const sourceId = requestUrl.searchParams.get('sourceId') ?? '';
-  const audio = resolveAuthorizedAudio(sourceId);
+  const audio = await resolveAuthorizedAudio(sourceId);
 
   if (!audio) {
     sendJson(response, 404, { error: 'Audio source not found' });
