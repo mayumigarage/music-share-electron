@@ -34,6 +34,8 @@ export class QueuePanel {
   private spotifyTrackCandidates = document.getElementById('spotify-track-candidates') as HTMLElement;
   private spotifyLocalResults = document.getElementById('track-candidate-spotify-local') as HTMLElement;
   private localAudioPreview = document.getElementById('local-audio-preview') as HTMLElement;
+  private youtubeCandidatesTitle = document.getElementById('youtube-candidates-title') as HTMLElement;
+  private youtubeMusicCandidatesGroup = document.getElementById('youtube-music-candidates-group') as HTMLElement;
   private btnResolve = document.getElementById('btn-track-resolve') as HTMLButtonElement;
   private btnSearch = document.getElementById('btn-track-search') as HTMLButtonElement;
   private btnSpotifySearch = document.getElementById('btn-track-spotify-search') as HTMLButtonElement;
@@ -463,11 +465,14 @@ export class QueuePanel {
       if (requestSequence !== this.resolutionSequence) return;
       this.activeResolutionRequestId = result.requestId;
       if (!useEditedQuery) this.trackSearchQueryInput.value = result.searchQuery;
+      const primaryTrack = result.youtube.length === 1 ? result.youtube[0].track : null;
+      const isDirectVideo = primaryTrack?.service === MusicServiceType.DirectVideo;
+      this.youtubeCandidatesTitle.textContent = isDirectVideo ? '直接動画' : 'YouTube';
+      this.youtubeMusicCandidatesGroup.style.display = isDirectVideo ? 'none' : 'block';
       this.renderCandidates('youtube', result.youtube);
-      const directYouTubeTrack = result.youtube.length === 1 ? result.youtube[0].track : null;
-      const isDirectYouTubeVideo = directYouTubeTrack?.service === MusicServiceType.YouTube
-        && Boolean(directYouTubeTrack.resolvedVideoId);
-      if (isDirectYouTubeVideo) {
+      const isDirectYouTubeVideo = primaryTrack?.service === MusicServiceType.YouTube
+        && Boolean(primaryTrack.resolvedVideoId);
+      if (isDirectVideo || isDirectYouTubeVideo) {
         document.getElementById('track-candidate-youtube-music')!.replaceChildren();
       } else if (result.youtubeMusic.length > 0) {
         this.renderCandidates('youtubeMusic', result.youtubeMusic);
@@ -617,6 +622,8 @@ export class QueuePanel {
     if (invalidatePending) this.resolutionSequence++;
     this.activeResolutionRequestId = null;
     this.resolvedTrack = null;
+    this.youtubeCandidatesTitle.textContent = 'YouTube';
+    this.youtubeMusicCandidatesGroup.style.display = 'block';
     this.btnAddPlaylist.disabled = true;
     this.btnAddQueue.disabled = true;
     this.trackCandidates.style.display = 'none';
@@ -660,8 +667,12 @@ export class QueuePanel {
 
       const thumb = document.createElement('img');
       thumb.className = 'track-candidate-thumb';
-      thumb.src = candidate.track.thumbnailUrl;
       thumb.alt = '';
+      if (candidate.track.thumbnailUrl) {
+        thumb.src = candidate.track.thumbnailUrl;
+      } else {
+        thumb.classList.add('is-placeholder');
+      }
 
       const copy = document.createElement('span');
       copy.className = 'track-candidate-copy';

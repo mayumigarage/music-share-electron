@@ -112,8 +112,20 @@ function detectService(url: string): MusicServiceType {
   if (lower.includes('music.apple.com') || lower.includes('itunes.apple.com')) {
     return MusicServiceType.AppleMusic;
   }
+  if (isDirectVideoUrl(url)) {
+    return MusicServiceType.DirectVideo;
+  }
   // Default fallback so we still return a result
   return MusicServiceType.YouTube;
+}
+
+function isDirectVideoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /\.(mp4|m4v|webm|ogv|ogg|mov|m3u8)(?:$|[?#])/iu.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 /** Extract a playable video ID from the common YouTube and YouTube Music URL forms. */
@@ -202,6 +214,22 @@ function fallbackResult(url: string, service: MusicServiceType): ResolvedTrack {
     durationSeconds: null,
     service,
     isFallback: true,
+  };
+}
+
+function resolveDirectVideo(url: string): ResolvedTrack {
+  const parsed = new URL(url);
+  const filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || 'Video');
+  const title = filename.replace(/\.[^.]+$/u, '').replace(/[-_]+/gu, ' ').trim() || 'Video';
+  return {
+    id: generateId(),
+    url,
+    resolvedVideoId: null,
+    title,
+    artist: parsed.hostname,
+    thumbnailUrl: '',
+    durationSeconds: null,
+    service: MusicServiceType.DirectVideo,
   };
 }
 
@@ -596,6 +624,8 @@ export async function resolveTrack(
         return await resolveSpotify(url, debugLog);
       case MusicServiceType.AppleMusic:
         return await resolveAppleMusic(url);
+      case MusicServiceType.DirectVideo:
+        return resolveDirectVideo(url);
       default:
         return fallbackResult(url, service);
       }
@@ -630,6 +660,15 @@ export async function resolveTrack(
   }
 
   const searchQuery = options?.searchQuery?.trim() || buildSearchQuery(result.artist, result.title);
+
+  if (service === MusicServiceType.DirectVideo) {
+    return {
+      requestId,
+      searchQuery,
+      youtube: [{ track: result, error: null }],
+      youtubeMusic: [],
+    };
+  }
 
   // A YouTube URL already identifies exactly what the user wants to play.
   // Do not search for lookalikes: present the linked video as the sole

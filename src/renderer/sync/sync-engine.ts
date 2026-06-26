@@ -5,7 +5,7 @@
 
 import type { WebSocketClient } from './websocket-client.js';
 import type { PlayerProxy } from './player-proxy.js';
-import { type Room, type User, type PlayerState, type Track } from '../../shared/models.js';
+import { RoomPlayerType, type Room, type User, type PlayerState } from '../../shared/models.js';
 
 export class SyncEngine {
   private room: Room | null = null;
@@ -39,6 +39,7 @@ export class SyncEngine {
     this.room = room;
     this.currentUser = user;
     this.isHost = !!user && !!room && room.hostId === user.id;
+    this.playerProxy.setPlayerType(room?.playerType ?? RoomPlayerType.YouTube);
 
     this.stopBroadcast();
 
@@ -73,13 +74,8 @@ export class SyncEngine {
         this.room.playerState = state;
       }
       if (trackChanged && state.currentTrack) {
-        const resolvedVideoId = state.currentTrack.resolvedVideoId;
-        if (!resolvedVideoId) {
-          this.onPlayerError?.('YouTube Music の再生候補を解決できませんでした');
-          return;
-        }
         try {
-          await this.playerProxy.loadTrack(resolvedVideoId);
+          await this.playerProxy.loadTrack(state.currentTrack);
         } catch (err) {
           console.error('[SyncEngine] Host loadTrack failed:', err);
           this.onPlayerError?.(err instanceof Error ? err.message : String(err));
@@ -159,13 +155,8 @@ export class SyncEngine {
     // Load track if changed
     const currentTrackId = this.room?.playerState.currentTrack?.id;
     if (state.currentTrack && state.currentTrack.id !== currentTrackId) {
-      const resolvedVideoId = state.currentTrack.resolvedVideoId;
-      if (!resolvedVideoId) {
-        console.error('[SyncEngine] Track has no resolved YouTube video ID:', state.currentTrack.id);
-        return;
-      }
       try {
-        await this.playerProxy.loadTrack(resolvedVideoId);
+        await this.playerProxy.loadTrack(state.currentTrack);
       } catch (err) {
         console.error('[SyncEngine] Guest loadTrack failed:', err);
         return;

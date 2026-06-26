@@ -9,6 +9,7 @@ import {
   Track,
   PlayerState,
   CreateRoomPayload,
+  RoomPlayerType,
 } from '../shared/models';
 
 export class RoomManager {
@@ -40,6 +41,7 @@ export class RoomManager {
       id,
       name: payload.roomName,
       mode: payload.mode,
+      playerType: payload.playerType ?? RoomPlayerType.YouTube,
       hostId: user.id,
       users: [user],
       queue: [],

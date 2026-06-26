@@ -117,7 +117,6 @@ export class PlayerControl {
       // If nothing is loaded but queue has tracks, start the first one
       if (!this.room.playerState.currentTrack && this.room.queue.length > 0) {
         const nextTrack = this.room.queue[0];
-        if (!nextTrack.resolvedVideoId) return;
         void this.startTrack(nextTrack);
         return;
       }
@@ -148,7 +147,6 @@ export class PlayerControl {
     } else if (this.room.queue.length > 0) {
       // If nothing is currently playing (e.g. after stop), start the first queued track
       const nextTrack = this.room.queue[0];
-      if (!nextTrack.resolvedVideoId) return;
       void this.startTrack(nextTrack);
     }
   }
@@ -156,14 +154,14 @@ export class PlayerControl {
   /** Start an explicitly selected queued track without leaving stale local state if loading fails. */
   private async startTrack(track: Track): Promise<void> {
     try {
-      await this.playerProxy.loadTrack(track.resolvedVideoId!);
+      await this.playerProxy.loadTrack(track);
     } catch (error) {
       console.error('[PlayerControl] Failed to load track:', error);
       return;
     }
 
     if (!this.room || this.room.queue.every((queuedTrack) => queuedTrack.id !== track.id)) return;
-    // loadVideoById starts playback; do not issue an additional resume command.
+    this.playerProxy.resume();
     this.room.playerState.currentTrack = track;
     this.room.playerState.isPlaying = true;
     this.room.playerState.positionSeconds = 0;

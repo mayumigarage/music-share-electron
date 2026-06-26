@@ -13,12 +13,19 @@ export enum MusicServiceType {
   Spotify = 'spotify',
   AppleMusic = 'applemusic',
   LocalAudio = 'localaudio',
+  DirectVideo = 'direct-video',
 }
 
 /** Room playback modes */
 export enum RoomMode {
   /** Each user controls their own playback */
   Individual = 'Individual',
+}
+
+/** Player implementation selected when the room is created. */
+export enum RoomPlayerType {
+  YouTube = 'youtube',
+  HtmlVideo = 'html-video',
 }
 
 // ============================================================================
@@ -30,7 +37,7 @@ export interface Track {
   id: string;
   /** Source URL supplied by the user. Kept for service-specific UI and opening the original link. */
   url: string;
-  /** YouTube/YouTube Music video selected for playback, or null when resolution failed. */
+  /** YouTube/YouTube Music video selected for playback, or null for direct video URLs. */
   resolvedVideoId: string | null;
   title: string;
   artist: string;
@@ -99,6 +106,7 @@ export interface Room {
   id: string;
   name: string;
   mode: RoomMode;
+  playerType: RoomPlayerType;
   hostId: string;
   users: User[];
   queue: Track[];
@@ -116,6 +124,7 @@ export interface CreateRoomPayload {
   roomName: string;
   userName: string;
   mode: RoomMode;
+  playerType?: RoomPlayerType;
   maxGuests: number;
 }
 

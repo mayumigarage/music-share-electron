@@ -13,7 +13,7 @@ import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
 import { FavoritesStore } from './favorites-store.js';
 import { AudioSearchPanel } from './audio-search-panel.js';
-import { RoomMode } from '../../shared/models.js';
+import { RoomMode, RoomPlayerType } from '../../shared/models.js';
 import type {
   Room,
   User,
@@ -436,11 +436,15 @@ export class AppUI {
       event.preventDefault();
       const roomName = (document.getElementById('input-sidebar-room-name') as HTMLInputElement).value.trim();
       const userName = (document.getElementById('input-sidebar-user-name-create') as HTMLInputElement).value.trim();
+      const playerTypeInput = document.getElementById('select-sidebar-player-type') as HTMLSelectElement | null;
+      const playerType = playerTypeInput?.value === RoomPlayerType.HtmlVideo
+        ? RoomPlayerType.HtmlVideo
+        : RoomPlayerType.YouTube;
       if (!roomName || !userName) {
         this.showToast('ルーム名とあなたの名前を入力してください', 'error');
         return;
       }
-      this.wsClient.createRoom(roomName, userName, RoomMode.Individual);
+      this.wsClient.createRoom(roomName, userName, RoomMode.Individual, playerType);
     });
 
     joinForm.addEventListener('submit', (event) => {
@@ -553,6 +557,7 @@ export class AppUI {
   private handleRoomJoined(room: Room, user: User): void {
     this.currentRoom = room;
     this.currentUser = user;
+    room.playerType ??= RoomPlayerType.YouTube;
     this.syncEngine.setRoom(room, user);
 
     this.sidebarRoomName.textContent = room.name;

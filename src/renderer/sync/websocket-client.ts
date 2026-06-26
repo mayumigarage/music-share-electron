@@ -4,6 +4,7 @@
  */
 
 import { io, Socket } from 'socket.io-client';
+import { RoomPlayerType } from '../../shared/models.js';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -127,8 +128,14 @@ export class WebSocketClient {
 
   // ── Client → Server emitters ──
 
-  createRoom(roomName: string, userName: string, mode: RoomMode, maxGuests = 5): void {
-    this.socket?.emit('CreateRoom', { roomName, userName, mode, maxGuests });
+  createRoom(
+    roomName: string,
+    userName: string,
+    mode: RoomMode,
+    playerType = RoomPlayerType.YouTube,
+    maxGuests = 5,
+  ): void {
+    this.socket?.emit('CreateRoom', { roomName, userName, mode, playerType, maxGuests });
   }
 
   joinRoom(roomId: string, userName: string): void {

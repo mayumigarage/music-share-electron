@@ -857,7 +857,8 @@
       margin-top: 8px;
     }
 
-    .room-entry-form input {
+    .room-entry-form input,
+    .room-entry-form select {
       width: 100%;
       padding: 6px 8px;
       border: 1px solid var(--border);
@@ -869,7 +870,8 @@
       font-size: 11px;
     }
 
-    .room-entry-form input:focus { border-color: var(--accent); }
+    .room-entry-form input:focus,
+    .room-entry-form select:focus { border-color: var(--accent); }
 
     .room-entry-form .btn {
       padding: 6px 8px;
@@ -975,12 +977,21 @@
       background: #000;
     }
 
-    #youtube-player, #youtube-player iframe {
+    #youtube-player, #youtube-player iframe, #html-video-player {
       width: 100%;
       height: 100%;
       border: 0;
       text-align: center;
+    }
+
+    #youtube-player {
       padding: 16px;
+    }
+
+    #html-video-player {
+      display: none;
+      object-fit: contain;
+      background: #000;
     }
 
     /* ── Bottom Control ── */
@@ -1370,6 +1381,10 @@
       background: #333;
     }
 
+    .track-candidate-thumb.is-placeholder {
+      background: linear-gradient(135deg, #20343a, #2f2738);
+    }
+
     .track-candidate-copy {
       flex: 1;
       min-width: 0;
@@ -1640,6 +1655,10 @@
           <form class="room-entry-form" id="room-create-form-sidebar">
             <input id="input-sidebar-room-name" type="text" placeholder="ルーム名" value="Music Room" />
             <input id="input-sidebar-user-name-create" type="text" placeholder="あなたの名前" />
+            <select id="select-sidebar-player-type" aria-label="再生プレイヤー">
+              <option value="youtube">YouTube プレイヤー</option>
+              <option value="html-video">videoタグで再生</option>
+            </select>
             <button class="btn btn-primary" type="submit">ルームを作成</button>
           </form>
           <form class="room-entry-form" id="room-join-form-sidebar" style="display:none;">
@@ -1722,7 +1741,7 @@
               <h3 class="track-candidate-group-title" id="youtube-candidates-title">YouTube</h3>
               <div class="track-candidate-list" id="track-candidate-youtube"></div>
             </section>
-            <section class="track-candidate-group" aria-labelledby="youtube-music-candidates-title">
+            <section class="track-candidate-group" id="youtube-music-candidates-group" aria-labelledby="youtube-music-candidates-title">
               <h3 class="track-candidate-group-title" id="youtube-music-candidates-title">YouTube Music</h3>
               <div class="track-candidate-list" id="track-candidate-youtube-music"></div>
             </section>

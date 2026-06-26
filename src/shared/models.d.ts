@@ -7,7 +7,8 @@ export declare enum MusicServiceType {
     YouTube = "youtube",
     Spotify = "spotify",
     AppleMusic = "applemusic",
-    LocalAudio = "localaudio"
+    LocalAudio = "localaudio",
+    DirectVideo = "direct-video"
 }
 /** Room playback modes */
 export declare enum RoomMode {
@@ -16,10 +17,16 @@ export declare enum RoomMode {
     /** Host audio is streamed to guests via WebRTC P2P */
     HostBroadcast = "HostBroadcast"
 }
+/** Player implementation selected when the room is created. */
+export declare enum RoomPlayerType {
+    YouTube = "youtube",
+    HtmlVideo = "html-video"
+}
 /** Represents a track in the system */
 export interface Track {
     id: string;
     url: string;
+    /** YouTube/YouTube Music video selected for playback, or null for direct video URLs. */
     resolvedVideoId: string | null;
     title: string;
     artist: string;
@@ -73,6 +80,7 @@ export interface Room {
     id: string;
     name: string;
     mode: RoomMode;
+    playerType: RoomPlayerType;
     hostId: string;
     users: User[];
     queue: Track[];
@@ -85,6 +93,7 @@ export interface CreateRoomPayload {
     roomName: string;
     userName: string;
     mode: RoomMode;
+    playerType?: RoomPlayerType;
     maxGuests: number;
 }
 export interface JoinRoomPayload {

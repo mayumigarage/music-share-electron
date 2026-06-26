@@ -4,7 +4,7 @@
  * Phase 1: Core models and Socket.IO event interfaces
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RoomMode = exports.MusicServiceType = void 0;
+exports.RoomPlayerType = exports.RoomMode = exports.MusicServiceType = void 0;
 // ============================================================================
 // Enums
 // ============================================================================
@@ -14,6 +14,7 @@ var MusicServiceType;
     MusicServiceType["YouTube"] = "youtube";
     MusicServiceType["Spotify"] = "spotify";
     MusicServiceType["AppleMusic"] = "applemusic";
+    MusicServiceType["DirectVideo"] = "direct-video";
 })(MusicServiceType || (exports.MusicServiceType = MusicServiceType = {}));
 /** Room playback modes */
 var RoomMode;
@@ -23,4 +24,10 @@ var RoomMode;
     /** Host audio is streamed to guests via WebRTC P2P */
     RoomMode["HostBroadcast"] = "HostBroadcast";
 })(RoomMode || (exports.RoomMode = RoomMode = {}));
+/** Player implementation selected when the room is created. */
+var RoomPlayerType;
+(function (RoomPlayerType) {
+    RoomPlayerType["YouTube"] = "youtube";
+    RoomPlayerType["HtmlVideo"] = "html-video";
+})(RoomPlayerType || (exports.RoomPlayerType = RoomPlayerType = {}));
 //# sourceMappingURL=models.js.map
