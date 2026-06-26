@@ -714,6 +714,71 @@
 
     .search-box:focus { border-color: var(--accent); }
 
+    .audio-search-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .audio-search-form .search-box {
+      flex: 1;
+    }
+
+    .audio-search-submit {
+      width: auto;
+      min-width: 96px;
+      flex-shrink: 0;
+    }
+
+    .audio-only-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+    }
+
+    .audio-only-toolbar .btn {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .audio-only-status {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-secondary);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .audio-only-volume-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    #audio-only-volume {
+      width: 92px;
+      accent-color: var(--accent);
+    }
+
+    .audio-search-item {
+      cursor: default;
+    }
+
+    .audio-search-play {
+      color: var(--accent) !important;
+    }
+
     .empty-state {
       text-align: center;
       color: var(--text-muted);
@@ -1492,9 +1557,24 @@
             <div class="track-list" id="history-list"></div>
           </div>
           <div id="search-panel" class="tab-panel" style="display:none;">
-            <div class="panel-header"><span class="panel-title">🔍 楽曲を検索</span></div>
-            <input class="search-box" id="search-query" type="search" placeholder="検索機能は今後追加されます" disabled />
-            <div class="empty-state">検索結果はここに表示されます</div>
+            <div class="panel-header"><span class="panel-title">🔍 Audio-only 音源を検索</span></div>
+            <form class="audio-search-form" id="audio-search-form">
+              <input class="search-box" id="search-query" type="search" placeholder="許可済み音源を検索" />
+              <button class="btn btn-primary audio-search-submit" type="submit">検索</button>
+            </form>
+            <div class="audio-only-toolbar" aria-label="Audio-only プレイヤー操作">
+              <span class="audio-only-status" id="audio-search-status">待機中</span>
+              <button class="btn" id="btn-audio-only-pause" type="button">一時停止</button>
+              <button class="btn" id="btn-audio-only-resume" type="button">再開</button>
+              <button class="btn" id="btn-audio-only-stop" type="button">停止</button>
+              <label class="audio-only-volume-wrap">
+                音量
+                <input id="audio-only-volume" type="range" min="0" max="1" step="0.01" value="1" />
+              </label>
+            </div>
+            <div class="track-list" id="audio-search-results">
+              <div class="empty-state">検索すると許可済みAudio-only音源がここに表示されます</div>
+            </div>
           </div>
         </div>
       </div>

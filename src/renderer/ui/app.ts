@@ -12,6 +12,7 @@ import { HistoryPanel } from './history-panel.js';
 import { MembersPanel } from './members-panel.js';
 import { PlayerControl } from './player-control.js';
 import { FavoritesStore } from './favorites-store.js';
+import { AudioSearchPanel } from './audio-search-panel.js';
 import { RoomMode } from '../../shared/models.js';
 import type {
   Room,
@@ -30,6 +31,7 @@ export class AppUI {
   private historyPanel: HistoryPanel;
   private membersPanel: MembersPanel;
   private playerControl: PlayerControl;
+  private audioSearchPanel: AudioSearchPanel;
   private favoritesStore = new FavoritesStore();
 
   private currentRoom: Room | null = null;
@@ -73,6 +75,7 @@ export class AppUI {
     this.historyPanel = new HistoryPanel();
     this.membersPanel = new MembersPanel();
     this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine);
+    this.audioSearchPanel = new AudioSearchPanel(this.showToast.bind(this));
   }
 
   async init(): Promise<void> {
@@ -120,6 +123,7 @@ export class AppUI {
     this.historyPanel.init();
     this.membersPanel.init();
     this.playerControl.init();
+    this.audioSearchPanel.init();
     this.renderFavoritePlaylist();
 
     this.wsClient.onRoomCreated = (room, user) => this.handleRoomJoined(room, user);

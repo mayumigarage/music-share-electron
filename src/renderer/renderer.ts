@@ -8,6 +8,36 @@ import { WebSocketClient } from './sync/websocket-client.js';
 import { SyncEngine } from './sync/sync-engine.js';
 import { PlayerProxy } from './sync/player-proxy.js';
 import { initializeSidebarResizers } from './ui/sidebar-resizer.js';
+import {
+  getAudioOnlyMetadata,
+  pauseAudioOnlyMode,
+  playAudioOnlyMode,
+  resumeAudioOnlyMode,
+  setAudioOnlyVolume,
+  stopAudioOnlyMode,
+} from './sync/audio-only-player.js';
+
+declare global {
+  interface Window {
+    musicShareAudioOnly: {
+      play: typeof playAudioOnlyMode;
+      pause: typeof pauseAudioOnlyMode;
+      resume: typeof resumeAudioOnlyMode;
+      stop: typeof stopAudioOnlyMode;
+      setVolume: typeof setAudioOnlyVolume;
+      getMetadata: typeof getAudioOnlyMetadata;
+    };
+  }
+}
+
+window.musicShareAudioOnly = {
+  play: playAudioOnlyMode,
+  pause: pauseAudioOnlyMode,
+  resume: resumeAudioOnlyMode,
+  stop: stopAudioOnlyMode,
+  setVolume: setAudioOnlyVolume,
+  getMetadata: getAudioOnlyMetadata,
+};
 
 async function main(): Promise<void> {
   console.log('[Renderer] main() started');

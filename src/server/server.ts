@@ -9,6 +9,7 @@ import { ClientToServerEvents, ServerToClientEvents } from '../shared/models';
 import { RoomManager } from './room-manager';
 import { registerHandlers } from './handlers';
 import { getSpotifyTrackMetadata } from './spotify-catalog';
+import { handleAudioRoute } from './audio-routes';
 
 const SPOTIFY_TRACK_ID_PATTERN = /^[A-Za-z0-9]{22}$/;
 
@@ -25,6 +26,11 @@ function sendJson(response: ServerResponse, statusCode: number, data: unknown): 
 
 async function handleHttpRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const requestUrl = new URL(request.url || '/', 'http://localhost');
+
+  if (await handleAudioRoute(request, response, requestUrl, sendJson)) {
+    return;
+  }
+
   const match = requestUrl.pathname.match(/^\/api\/spotify\/tracks\/([A-Za-z0-9]{22})$/);
   if (request.method !== 'GET' || !match) {
     sendJson(response, 404, { error: 'Not found' });
