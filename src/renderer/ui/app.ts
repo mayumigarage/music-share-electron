@@ -25,6 +25,17 @@ import type {
 type Workspace = 'playlist' | 'queue';
 type CenterTab = 'queue' | 'history' | 'search';
 
+function formatLogPayload(payload: Record<string, unknown>): string {
+  return JSON.stringify(payload, null, 2);
+}
+
+function formatCommandArgv(argv: string[]): string {
+  return argv.map((arg) => {
+    if (!/[\s"]/.test(arg)) return arg;
+    return `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }).join(' ');
+}
+
 export class AppUI {
   private playlistPanel: PlaylistPanel;
   private queuePanel: QueuePanel;
@@ -83,34 +94,36 @@ export class AppUI {
     // Code points make mojibake distinguishable from a DevTools display issue.
     window.electronAPI.onTrackResolverDebug((log) => {
       if (log.stage === 'spotify-web-api') {
-        console.log(`[TrackResolver][${log.stage}]`, {
+        console.log(`[TrackResolver][${log.stage}] ${formatLogPayload({
           sourceUrl: log.sourceUrl,
           title: log.title,
           artist: log.artist,
           details: log.details,
-        });
+        })}`);
         return;
       }
 
       if (log.stage === 'spotify-metadata') {
-        console.log('[TrackResolver][Spotify metadata]', {
+        console.log(`[TrackResolver][Spotify metadata] ${formatLogPayload({
           sourceUrl: log.sourceUrl,
           title: log.title,
           artist: log.artist,
           titleCodePoints: log.titleCodePoints,
           artistCodePoints: log.artistCodePoints,
-        });
+        })}`);
         return;
       }
 
-      console.log('[TrackResolver][yt-dlp command]', {
+      const commandArgv = ['yt-dlp', ...(log.ytDlpArgs || [])];
+      console.log(`[TrackResolver][yt-dlp command] ${formatLogPayload({
         sourceUrl: log.sourceUrl,
         candidate: log.candidateType,
         searchQuery: log.searchQuery,
         // execFile passes an argv array (not a shell command string), so this
         // is the exact argument sequence delivered to yt-dlp.
-        command: ['yt-dlp', ...(log.ytDlpArgs || [])],
-      });
+        command: formatCommandArgv(commandArgv),
+        argv: commandArgv,
+      })}`);
     });
 
     this.bindGlobalEvents();

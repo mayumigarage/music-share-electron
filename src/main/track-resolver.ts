@@ -22,7 +22,7 @@ import type {
   TrackResolverDebugLog,
   YouTubeMusicCandidatesResult,
 } from '../shared/preload-api';
-import { MusicServiceType } from '../shared/models';
+import { MusicServiceType, type Track } from '../shared/models';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,6 +53,12 @@ type YtDlpError = Error & {
   stderr?: string;
 };
 
+type YtDlpExecOptions = {
+  timeout: number;
+  windowsHide: boolean;
+  maxBuffer: number;
+};
+
 type TrackResolverDebugLogger = (log: TrackResolverDebugLog) => void;
 type YouTubeMusicCandidatesListener = (result: YouTubeMusicCandidatesResult) => void;
 
@@ -70,6 +76,7 @@ interface CacheEntry<T> {
 
 const metadataCache = new Map<string, CacheEntry<ResolvedTrack>>();
 const candidateCache = new Map<string, CacheEntry<TrackSearchCandidate[]>>();
+const htmlVideoSourceCache = new Map<string, CacheEntry<string>>();
 
 interface YouTubeMetadata {
   id: string;
@@ -235,8 +242,143 @@ function resolveDirectVideo(url: string): ResolvedTrack {
 
 function logYtDlpFailure(detail: string): void {
   // Keep individual log entries readable and prevent unexpectedly large tool output.
-  const compact = detail.replace(/\r?\n/g, '\\n').slice(0, 4_000);
+  const compact = redactSensitiveLogText(detail).replace(/\r?\n/g, '\\n').slice(0, 4_000);
   appendAppLog(`[TrackResolver] yt-dlp candidate search failed\n${compact}`);
+}
+
+function logYtDlpVideoSourceFailure(detail: string): void {
+  const compact = redactSensitiveLogText(detail).replace(/\r?\n/g, '\\n').slice(0, 4_000);
+  appendAppLog(`[TrackResolver] yt-dlp HTML video source failed\n${compact}`);
+}
+
+function getYtDlpEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PYTHONUTF8: process.env.PYTHONUTF8 || '1',
+    PYTHONIOENCODING: process.env.PYTHONIOENCODING || 'utf-8',
+  };
+}
+
+function quoteCommandArg(arg: string): string {
+  return /[\s"]/u.test(arg) ? `"${arg.replace(/"/gu, '\\"')}"` : arg;
+}
+
+function maskSensitiveUrlForLog(value: string, maxLength = 200): string {
+  try {
+    const parsed = new URL(value);
+    for (const key of parsed.searchParams.keys()) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.includes('sig') || lowerKey === 'lsig' || lowerKey === 'signature') {
+        parsed.searchParams.set(key, '[masked]');
+      }
+    }
+    return parsed.toString().slice(0, maxLength);
+  } catch {
+    return value.slice(0, maxLength);
+  }
+}
+
+function redactSensitiveLogText(value: string): string {
+  return value
+    .replace(/https?:\/\/\S+/gu, (url) => maskSensitiveUrlForLog(url))
+    .replace(/(authorization\s*[:=]\s*)[^\s\\n]+/giu, '$1[masked]')
+    .replace(/(cookie\s*[:=]\s*)[^\r\n\\]+/giu, '$1[masked]');
+}
+
+function getDirectUrlAnalysis(videoId: string, sourceUrl: string, directUrl: string): Record<string, unknown> {
+  const base = {
+    videoId,
+    sourceUrl: maskSensitiveUrlForLog(sourceUrl),
+    directUrl: maskSensitiveUrlForLog(directUrl),
+    directUrlLength: directUrl.length,
+    includesGoogleVideo: directUrl.includes('googlevideo.com'),
+    itag: null as string | null,
+    mime: null as string | null,
+    expire: null as string | null,
+    c: null as string | null,
+    host: null as string | null,
+    pathname: null as string | null,
+    protocol: null as string | null,
+    searchParams: {} as Record<string, string | boolean | null>,
+  };
+
+  try {
+    const parsed = new URL(directUrl);
+    const keys = [
+      'itag',
+      'mime',
+      'expire',
+      'c',
+      'rn',
+      'ratebypass',
+      'range',
+      'clen',
+      'dur',
+      'source',
+      'requiressl',
+      'alr',
+      'cpn',
+    ];
+    const params: Record<string, string | boolean | null> = {};
+    for (const key of keys) {
+      params[key] = parsed.searchParams.get(key);
+    }
+    params.hasSig = parsed.searchParams.has('sig') || parsed.searchParams.has('signature');
+    params.hasLsig = parsed.searchParams.has('lsig');
+    params.hasN = parsed.searchParams.has('n');
+
+    return {
+      ...base,
+      itag: parsed.searchParams.get('itag'),
+      mime: parsed.searchParams.get('mime'),
+      expire: parsed.searchParams.get('expire'),
+      c: parsed.searchParams.get('c'),
+      host: parsed.hostname,
+      pathname: parsed.pathname,
+      protocol: parsed.protocol,
+      searchParams: params,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      parseError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function logTrackResolverStep(step: string, payload: Record<string, unknown>): void {
+  console.log(`[TrackResolver][${step}] ${JSON.stringify(payload, null, 2)}`);
+}
+
+function formatYtDlpFailureForTerminal(context: string, command: string, args: string[], error: unknown): string {
+  const ytDlpError = error as YtDlpError;
+  return [
+    `[TrackResolver][yt-dlp failed] ${context}`,
+    `command=${[command, ...args].map(quoteCommandArg).join(' ')}`,
+    `reason=${ytDlpError.message || String(error)}`,
+    `exitCode=${String(ytDlpError.code ?? 'unknown')}`,
+    `killed=${String(ytDlpError.killed ?? false)} signal=${String(ytDlpError.signal ?? 'none')}`,
+    `stderr=${redactSensitiveLogText(ytDlpError.stderr?.trim() || '(empty)')}`,
+    `stdout=${redactSensitiveLogText(ytDlpError.stdout?.trim() || '(empty)')}`,
+  ].join('\n');
+}
+
+async function execYtDlp(
+  args: string[],
+  options: YtDlpExecOptions,
+  context: string,
+): Promise<{ stdout: string; stderr: string }> {
+  const command = getYtDlpCommand();
+  try {
+    return await execFileAsync(command, args, {
+      ...options,
+      encoding: 'utf8',
+      env: getYtDlpEnv(),
+    });
+  } catch (error) {
+    console.error(formatYtDlpFailureForTerminal(context, command, args, error));
+    throw error;
+  }
 }
 
 function toCodePoints(value: string): string[] {
@@ -324,14 +466,14 @@ function parseSearchIds(output: string): string[] {
 }
 
 async function fetchYouTubeMetadata(videoId: string): Promise<YouTubeMetadata | null> {
-  const { stdout } = await execFileAsync(
-    getYtDlpCommand(),
+  const { stdout } = await execYtDlp(
     [
       '--encoding', 'utf-8', '--no-playlist', '--no-warnings', '--skip-download',
       '--print', '%(id)s\t%(title)s\t%(uploader)s\t%(thumbnail)s\t%(duration)s',
       `https://music.youtube.com/watch?v=${videoId}`,
     ],
     { timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 },
+    `fetch YouTube metadata videoId=${videoId}`,
   );
   const [id, title, uploader, thumbnail, duration] = stdout.trim().split('\t', 5);
   if (!id || !VIDEO_ID_PATTERN.test(id)) return null;
@@ -340,6 +482,117 @@ async function fetchYouTubeMetadata(videoId: string): Promise<YouTubeMetadata | 
     id, title: title || '', uploader: uploader || '', thumbnail: thumbnail || '',
     duration: Number.isFinite(parsedDuration) ? parsedDuration : null,
   };
+}
+
+export async function resolveHtmlVideoSource(track: Pick<Track, 'url' | 'resolvedVideoId' | 'service'>): Promise<string> {
+  const sourceUrl = track.resolvedVideoId
+    ? `https://www.youtube.com/watch?v=${track.resolvedVideoId}`
+    : track.url;
+
+  try {
+    new URL(sourceUrl);
+  } catch {
+    throw new Error('動画URLの形式が正しくありません。');
+  }
+
+  if (track.service === MusicServiceType.DirectVideo || isDirectVideoUrl(sourceUrl)) {
+    return sourceUrl;
+  }
+
+  const videoId = track.resolvedVideoId || extractYouTubeVideoId(sourceUrl);
+  if (!videoId) {
+    throw new Error('HTML videoで再生できるYouTube動画IDを解決できませんでした。');
+  }
+
+
+
+    // クッキーファイルのパスを決定
+  function getCookiesPath(): string {
+    if (!app.isPackaged) {
+      // 開発時はプロジェクトのルート（またはsrcと同じ階層）にあるcookies.txtを参照
+      return path.join(app.getAppPath(), 'cookies.txt');
+    }
+    // パッケージ後は electron-builder の extraResources で同梱した cookies.txt を優先し、
+    // 見つからない場合だけユーザーが差し替えやすい userData 配下を参照する。
+    const bundledCookies = path.join(process.resourcesPath, 'cookies.txt');
+    if (fs.existsSync(bundledCookies)) return bundledCookies;
+    return path.join(app.getPath('userData'), 'cookies.txt');
+  }
+
+  const cacheKey = `html-video\u0000${videoId}`;
+  const lookup = getCached(htmlVideoSourceCache, cacheKey, async () => {
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const command = getYtDlpCommand();
+    const args = [
+      '--encoding', 'utf-8',
+      '--no-playlist',
+      '--no-warnings',
+      '--skip-download',
+      // フォーマット指定
+      '--format', 'best[ext=mp4][vcodec!=none][acodec!=none]/bestaudio[ext=m4a]/best[vcodec!=none][acodec!=none]/best',
+      // ヘッダー群
+      '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language:ja,en-US;q=0.9,en;q=0.8',
+      // ★ WindowsのexecFileでは、全体をシングルクォートで囲まずにそのまま渡します
+      '--extractor-args', 'youtube:player-client=web,android',
+      videoUrl,
+    ];
+
+    const cookiesPath = getCookiesPath();
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
+    } else {
+      console.warn(`[TrackResolver] cookies.txt not found at: ${cookiesPath}. Proceeding without cookies.`);
+    }
+
+    // 最後に get-url と URL を追加
+    args.push('--get-url', videoUrl);
+
+    try {
+      logTrackResolverStep('before-get-url', {
+        sourceUrl: maskSensitiveUrlForLog(sourceUrl),
+        videoId,
+        command: [command, ...args].map(quoteCommandArg).join(' '),
+        argv: [command, ...args],
+      });
+      const { stdout } = await execYtDlp(
+        args,
+        { timeout: 30_000, windowsHide: true, maxBuffer: 256 * 1024 },
+        `resolve HTML video source videoId=${videoId}`,
+      );
+      logTrackResolverStep('after-get-url', {
+        sourceUrl: maskSensitiveUrlForLog(sourceUrl),
+        videoId,
+        stdoutLength: stdout.length,
+        lineCount: stdout.split(/\r?\n/u).filter((line) => line.trim()).length,
+      });
+      const directUrl = stdout.split(/\r?\n/u).map((line) => line.trim()).find(Boolean);
+      if (!directUrl) {
+        throw new Error('yt-dlp returned an empty media URL');
+      }
+      logTrackResolverStep('direct-url-analysis', getDirectUrlAnalysis(videoId, sourceUrl, directUrl));
+      return directUrl;
+    } catch (error) {
+      const ytDlpError = error as YtDlpError;
+      logYtDlpVideoSourceFailure(
+        `sourceUrl=${maskSensitiveUrlForLog(sourceUrl)}\n`
+        + `videoId=${videoId}\n`
+        + `reason=${ytDlpError.message || String(error)}\n`
+        + `exitCode=${String(ytDlpError.code ?? 'unknown')}\n`
+        + `killed=${String(ytDlpError.killed ?? false)} signal=${String(ytDlpError.signal ?? 'none')}\n`
+        + `stderr=${ytDlpError.stderr?.trim() || '(empty)'}\n`
+        + `stdout=${ytDlpError.stdout?.trim() || '(empty)'}`,
+      );
+      throw new Error('HTML video用の再生URLを取得できませんでした。yt-dlp とネットワークを確認してください。');
+    }
+  });
+
+  if (lookup.value) {
+    logTrackResolverStep('html-video-source-cache-hit', getDirectUrlAnalysis(videoId, sourceUrl, lookup.value));
+    return lookup.value;
+  }
+
+  return await lookup.promise;
 }
 
 /**
@@ -371,9 +624,10 @@ async function findYouTubeCandidate(
     debugLog?.({
       stage: 'yt-dlp-command', sourceUrl: url, candidateType, searchQuery, ytDlpArgs: searchArgs,
     });
-    const { stdout: searchOutput } = await execFileAsync(
-      getYtDlpCommand(), searchArgs,
+    const { stdout: searchOutput } = await execYtDlp(
+      searchArgs,
       { timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 },
+      `search ${isYouTubeMusic ? 'YouTube Music' : 'YouTube'} candidates query=${searchQuery}`,
     );
     const videoIds = parseSearchIds(searchOutput).slice(0, 12);
     if (videoIds.length === 0) {
@@ -391,6 +645,22 @@ async function findYouTubeCandidate(
       .filter((candidate): candidate is YouTubeMetadata => candidate !== null)
       .map((candidate) => ({ candidate, score: scoreYouTubeCandidate(candidate, title, artist, expectedDuration) }))
       .sort((a, b) => b.score - a.score);
+    logTrackResolverStep('video-id-selected-from-search-results', {
+      sourceUrl: url,
+      candidateType,
+      searchQuery,
+      selectedVideoId: ranked[0]?.candidate.id ?? null,
+      selectedTitle: ranked[0]?.candidate.title ?? null,
+      selectedUploader: ranked[0]?.candidate.uploader ?? null,
+      selectedScore: ranked[0]?.score ?? null,
+      rankedVideoIds: ranked.slice(0, MAX_CANDIDATES_PER_SERVICE).map(({ candidate, score }) => ({
+        videoId: candidate.id,
+        title: candidate.title,
+        uploader: candidate.uploader,
+        duration: candidate.duration,
+        score,
+      })),
+    });
     // The highest-confidence official match appears first. The remaining
     // results are intentionally kept so a user can select an alternate
     // release (live version, remaster, etc.) or make use of an edited query.

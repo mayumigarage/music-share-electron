@@ -34,6 +34,10 @@ const api: ElectronAPI = {
     return ipcRenderer.invoke('resolve-track', url, options) as Promise<TrackSearchResult>;
   },
 
+  resolveHtmlVideoSource: (track) => {
+    return ipcRenderer.invoke('resolve-html-video-source', track) as Promise<string>;
+  },
+
   /**
    * Resolve a local media ID to audio metadata and a playback URL.
    */

@@ -16,9 +16,10 @@ import {
 } from 'electron';
 import * as path from 'path';
 import { LayoutManager } from './layout-manager';
-import { resolveTrack } from './track-resolver';
+import { resolveHtmlVideoSource, resolveTrack } from './track-resolver';
 import { appendCrashLog } from './crash-handler';
 import { SpotifyAuthManager } from './spotify-auth';
+import { MusicServiceType } from '../shared/models';
 import type { TrackResolverDebugLog } from '../shared/preload-api';
 
 const WINDOW_WIDTH = 1200;
@@ -200,6 +201,36 @@ export class WindowManager {
       });
     });
 
+    ipcMain.handle('resolve-html-video-source', async (_, track: unknown) => {
+      if (!track || typeof track !== 'object') {
+        throw new TypeError('track must be an object');
+      }
+      const candidate = track as {
+        url?: unknown;
+        resolvedVideoId?: unknown;
+        service?: unknown;
+      };
+      if (typeof candidate.url !== 'string') {
+        throw new TypeError('track.url must be a string');
+      }
+      if (candidate.resolvedVideoId !== null && candidate.resolvedVideoId !== undefined
+        && typeof candidate.resolvedVideoId !== 'string') {
+        throw new TypeError('track.resolvedVideoId must be a string or null');
+      }
+      if (typeof candidate.service !== 'string') {
+        throw new TypeError('track.service must be a string');
+      }
+      if (!Object.values(MusicServiceType).includes(candidate.service as MusicServiceType)) {
+        throw new TypeError('track.service is not supported');
+      }
+
+      return resolveHtmlVideoSource({
+        url: candidate.url,
+        resolvedVideoId: candidate.resolvedVideoId ?? null,
+        service: candidate.service as MusicServiceType,
+      });
+    });
+
     // Phase 8.1: Receive crash reports from renderer and append to crash.log
     ipcMain.handle('report-crash', async (_, detail: string) => {
       appendCrashLog(`[Renderer] ${detail}`);
@@ -295,6 +326,7 @@ export class WindowManager {
     ipcMain.removeHandler('open-external');
     ipcMain.removeHandler('set-sidebar-visibility');
     ipcMain.removeHandler('resolve-track');
+    ipcMain.removeHandler('resolve-html-video-source');
     ipcMain.removeHandler('report-crash');
     ipcMain.removeHandler('show-error-dialog');
     ipcMain.removeHandler('start-spotify-auth');

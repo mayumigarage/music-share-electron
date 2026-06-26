@@ -7,13 +7,31 @@
  *           Windows must be created after the CDM signals readiness.
  */
 
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, session } from 'electron';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { initializeCrashHandler } from './crash-handler';
 import { WindowManager } from './window-manager';
 import { startRendererServer, stopRendererServer } from './renderer-server';
 import { SpotifyAuthManager } from './spotify-auth';
 import type { AudioStreamMetadata, LocalAudioSearchResult } from '../shared/models';
+
+function initializeTerminalEncoding(): void {
+  process.stdout.setDefaultEncoding('utf8');
+  process.stderr.setDefaultEncoding('utf8');
+  process.env.PYTHONUTF8 = process.env.PYTHONUTF8 || '1';
+  process.env.PYTHONIOENCODING = process.env.PYTHONIOENCODING || 'utf-8';
+
+  if (process.platform !== 'win32') return;
+
+  try {
+    execFileSync('chcp.com', ['65001'], { stdio: 'ignore', windowsHide: true });
+  } catch (error) {
+    console.warn('[Main] Failed to switch terminal code page to UTF-8:', error);
+  }
+}
+
+initializeTerminalEncoding();
 
 // Allow media playback without user gesture (required for programmatic
 // player control in the WebContentsView).
@@ -30,6 +48,104 @@ initializeCrashHandler();
 let windowManager: WindowManager | null = null;
 let rendererServerUrl: string | null = null;
 const spotifyAuthManager = new SpotifyAuthManager();
+let mediaRequestLoggingInitialized = false;
+
+type HeaderValue = string | string[] | undefined;
+type HeaderMap = Record<string, HeaderValue>;
+
+function maskSensitiveUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    for (const key of parsed.searchParams.keys()) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.includes('sig') || lowerKey === 'lsig' || lowerKey === 'signature') {
+        parsed.searchParams.set(key, '[masked]');
+      }
+    }
+    return parsed.toString().slice(0, 200);
+  } catch {
+    return value.slice(0, 200);
+  }
+}
+
+function getHeader(headers: HeaderMap | undefined, name: string): HeaderValue {
+  if (!headers) return undefined;
+  const lowerName = name.toLowerCase();
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === lowerName);
+  const value = key ? headers[key] : undefined;
+  if (lowerName === 'authorization' || lowerName === 'cookie') return value === undefined ? undefined : '[masked]';
+  return value;
+}
+
+function formatHeader(value: HeaderValue): string | undefined {
+  if (Array.isArray(value)) return value.join(', ');
+  return value;
+}
+
+function logMediaRequest(
+  phase: 'before-request' | 'before-send-headers' | 'headers-received' | 'completed' | 'failed',
+  details: {
+    url: string;
+    method?: string;
+    resourceType?: string;
+    statusCode?: number;
+    error?: string;
+    requestHeaders?: HeaderMap;
+    responseHeaders?: HeaderMap;
+    fromCache?: boolean;
+  },
+): void {
+  console.log(`[MediaRequest][${phase}] ${JSON.stringify({
+    url: maskSensitiveUrl(details.url),
+    method: details.method,
+    resourceType: details.resourceType,
+    statusCode: details.statusCode,
+    error: details.error,
+    requestHeaders: details.requestHeaders ? {
+      'user-agent': formatHeader(getHeader(details.requestHeaders, 'user-agent')),
+      referer: formatHeader(getHeader(details.requestHeaders, 'referer')),
+      range: formatHeader(getHeader(details.requestHeaders, 'range')),
+    } : undefined,
+    responseHeaders: details.responseHeaders ? {
+      'content-type': formatHeader(getHeader(details.responseHeaders, 'content-type')),
+      'content-length': formatHeader(getHeader(details.responseHeaders, 'content-length')),
+      'accept-ranges': formatHeader(getHeader(details.responseHeaders, 'accept-ranges')),
+      location: formatHeader(getHeader(details.responseHeaders, 'location')),
+    } : undefined,
+    fromCache: details.fromCache,
+  }, null, 2)}`);
+}
+
+function initializeMediaRequestLogging(): void {
+  if (mediaRequestLoggingInitialized) return;
+  mediaRequestLoggingInitialized = true;
+
+  const filter = { urls: ['*://*.googlevideo.com/videoplayback*'] };
+  const webRequest = session.defaultSession.webRequest;
+
+  webRequest.onBeforeRequest(filter, (details, callback) => {
+    logMediaRequest('before-request', details);
+    callback({});
+  });
+
+  webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    logMediaRequest('before-send-headers', details);
+    callback({ requestHeaders: details.requestHeaders });
+  });
+
+  webRequest.onHeadersReceived(filter, (details, callback) => {
+    logMediaRequest('headers-received', details);
+    callback({ responseHeaders: details.responseHeaders });
+  });
+
+  webRequest.onCompleted(filter, (details) => {
+    logMediaRequest('completed', details);
+  });
+
+  webRequest.onErrorOccurred(filter, (details) => {
+    logMediaRequest('failed', details);
+  });
+}
 
 function resolveAudioStreamPlaceholder(mediaId: string): AudioStreamMetadata {
   const normalizedMediaId = mediaId.trim();
@@ -146,6 +262,7 @@ if (!gotTheLock) {
   // Fallback: if widevine-ready/widevine-error never fire (e.g. standard Electron),
   // create the window on the normal ready event so the app doesn't hang.
   app.whenReady().then(async () => {
+    initializeMediaRequestLogging();
     if (!windowManager) {
       console.warn('[Main] widevine-ready/widevine-error did not fire; falling back to app.whenReady()');
       await spotifyAuthManager.initialize();

@@ -8,6 +8,8 @@ files:
 extraResources:
   - from: tools/yt-dlp.exe
     to: tools/yt-dlp.exe
+  - from: cookies.txt
+    to: cookies.txt
 
 # CastLabs 製 Electron フォークのバイナリを直接使用（公式ミラーには存在しないバージョンのため）
 electronDist: ./node_modules/electron/dist

@@ -41,3 +41,5 @@ coverage/
 
 # Claude / temporary
 .claude/
+
+cookies.txt

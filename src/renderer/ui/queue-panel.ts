@@ -4,12 +4,12 @@
  */
 
 import type { WebSocketClient } from '../sync/websocket-client.js';
-import { MusicServiceType, type LocalAudioSearchResult, type Track } from '../../shared/models.js';
+import { MusicServiceType, type Track } from '../../shared/models.js';
 import type { TrackSearchCandidate, YouTubeMusicCandidatesResult } from '../../shared/preload-api.js';
 import '../../shared/preload-api.js';
 import type { FavoritesStore } from './favorites-store.js';
 
-type TrackAddMode = 'url' | 'spotify' | 'local';
+type TrackAddMode = 'url';
 
 export class QueuePanel {
   private queue: Track[] = [];
@@ -23,24 +23,14 @@ export class QueuePanel {
   private trackOverlay = document.getElementById('modal-overlay-track') as HTMLElement;
   private modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-track-add-mode]'));
   private urlModePanel = document.getElementById('track-add-url-panel') as HTMLElement;
-  private spotifyModePanel = document.getElementById('track-add-spotify-panel') as HTMLElement;
-  private localModePanel = document.getElementById('track-add-local-panel') as HTMLElement;
   private trackUrlInput = document.getElementById('input-track-url') as HTMLInputElement;
   private trackSearchQueryInput = document.getElementById('input-track-search-query') as HTMLInputElement;
-  private trackSpotifyUrlInput = document.getElementById('input-track-spotify-url') as HTMLInputElement;
-  private trackSpotifySearchQueryInput = document.getElementById('input-track-spotify-search-query') as HTMLInputElement;
-  private trackMediaIdInput = document.getElementById('input-track-media-id') as HTMLInputElement;
   private trackCandidates = document.getElementById('track-candidates') as HTMLElement;
-  private spotifyTrackCandidates = document.getElementById('spotify-track-candidates') as HTMLElement;
-  private spotifyLocalResults = document.getElementById('track-candidate-spotify-local') as HTMLElement;
-  private localAudioPreview = document.getElementById('local-audio-preview') as HTMLElement;
   private youtubeCandidatesTitle = document.getElementById('youtube-candidates-title') as HTMLElement;
   private youtubeMusicCandidatesGroup = document.getElementById('youtube-music-candidates-group') as HTMLElement;
   private btnResolve = document.getElementById('btn-track-resolve') as HTMLButtonElement;
   private btnSearch = document.getElementById('btn-track-search') as HTMLButtonElement;
-  private btnSpotifySearch = document.getElementById('btn-track-spotify-search') as HTMLButtonElement;
   private btnAddPlaylist = document.getElementById('btn-track-add-playlist') as HTMLButtonElement;
-  private btnAddQueue = document.getElementById('btn-track-add-queue') as HTMLButtonElement;
 
   private activeAddMode: TrackAddMode = 'url';
   private resolvedTrack: Track | null = null;
@@ -60,24 +50,11 @@ export class QueuePanel {
     document.getElementById('btn-track-cancel')?.addEventListener('click', () => this.closeAddModal());
     this.modeButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        const mode = this.toTrackAddMode(button.dataset.trackAddMode);
-        this.setTrackAddMode(mode);
+        this.setTrackAddMode(this.toTrackAddMode(button.dataset.trackAddMode));
       });
     });
-    this.btnResolve.addEventListener('click', () => {
-      if (this.activeAddMode === 'local') {
-        void this.resolveLocalAudio();
-      } else if (this.activeAddMode === 'spotify') {
-        void this.resolveSpotifyUrlToLocalSearch();
-      } else {
-        void this.resolveUrl();
-      }
-    });
+    this.btnResolve.addEventListener('click', () => this.handlePrimaryTrackAction());
     this.btnSearch.addEventListener('click', () => this.searchWithEditedQuery());
-    this.btnSpotifySearch.addEventListener('click', () => {
-      void this.searchSpotifyLocalWithEditedQuery();
-    });
-    this.btnAddQueue.addEventListener('click', () => this.addResolvedTrack());
     this.btnAddPlaylist.addEventListener('click', () => {
       this.showToast('プレイリストへの保存機能は今後追加されます', 'info');
     });
@@ -94,8 +71,6 @@ export class QueuePanel {
       this.renderCandidates('youtubeMusic', result.youtubeMusic);
     });
     this.trackUrlInput.addEventListener('input', () => this.clearSearchResults());
-    this.trackSpotifyUrlInput.addEventListener('input', () => this.clearSearchResults());
-    this.trackMediaIdInput.addEventListener('input', () => this.clearSearchResults());
     this.trackUrlInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
@@ -106,24 +81,6 @@ export class QueuePanel {
       if (event.key === 'Enter') {
         event.preventDefault();
         this.searchWithEditedQuery();
-      }
-    });
-    this.trackSpotifyUrlInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        void this.resolveSpotifyUrlToLocalSearch();
-      }
-    });
-    this.trackSpotifySearchQueryInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        void this.searchSpotifyLocalWithEditedQuery();
-      }
-    });
-    this.trackMediaIdInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        void this.resolveLocalAudio();
       }
     });
   }
@@ -137,12 +94,10 @@ export class QueuePanel {
     this.trackOverlay.style.display = 'flex';
     this.trackUrlInput.value = '';
     this.trackSearchQueryInput.value = '';
-    this.trackSpotifyUrlInput.value = '';
-    this.trackSpotifySearchQueryInput.value = '';
-    this.trackMediaIdInput.value = '';
     this.setTrackAddMode('url', false);
     this.clearSearchResults();
     this.btnResolve.disabled = false;
+    this.btnResolve.textContent = this.getResolveButtonText();
     this.btnSearch.disabled = false;
     this.trackUrlInput.focus();
   }
@@ -396,11 +351,8 @@ export class QueuePanel {
       button.setAttribute('aria-selected', String(isActive));
     });
     this.urlModePanel.hidden = mode !== 'url';
-    this.spotifyModePanel.hidden = mode !== 'spotify';
-    this.localModePanel.hidden = mode !== 'local';
     this.btnResolve.textContent = this.getResolveButtonText(mode);
     this.btnSearch.disabled = mode !== 'url';
-    this.btnSpotifySearch.disabled = mode !== 'spotify';
     this.clearSearchResults();
 
     if (focusInput) {
@@ -409,19 +361,17 @@ export class QueuePanel {
   }
 
   private toTrackAddMode(mode: string | undefined): TrackAddMode {
-    if (mode === 'spotify' || mode === 'local') return mode;
+    void mode;
     return 'url';
   }
 
   private getResolveButtonText(mode: TrackAddMode = this.activeAddMode): string {
-    if (mode === 'spotify') return 'Spotifyを解析';
-    if (mode === 'local') return 'IDを解決';
+    void mode;
     return 'URLを解析';
   }
 
   private getPrimaryInputForMode(mode: TrackAddMode): HTMLInputElement {
-    if (mode === 'spotify') return this.trackSpotifyUrlInput;
-    if (mode === 'local') return this.trackMediaIdInput;
+    void mode;
     return this.trackUrlInput;
   }
 
@@ -429,12 +379,15 @@ export class QueuePanel {
     await this.resolveTrack(false);
   }
 
-  private async searchWithEditedQuery(): Promise<void> {
-    if (this.activeAddMode === 'local') return;
-    if (this.activeAddMode === 'spotify') {
-      await this.searchSpotifyLocalWithEditedQuery();
+  private handlePrimaryTrackAction(): void {
+    if (this.resolvedTrack) {
+      this.addResolvedTrack();
       return;
     }
+    void this.resolveUrl();
+  }
+
+  private async searchWithEditedQuery(): Promise<void> {
     if (!this.trackSearchQueryInput.value.trim()) {
       this.showToast('検索コマンドを入力してください', 'error');
       this.trackSearchQueryInput.focus();
@@ -453,6 +406,7 @@ export class QueuePanel {
 
     const requestSequence = ++this.resolutionSequence;
     this.clearSearchResults(false);
+    this.renderResolvingProgress();
     this.btnResolve.textContent = '解析中...';
     this.btnResolve.disabled = true;
     this.btnSearch.disabled = true;
@@ -488,132 +442,13 @@ export class QueuePanel {
     } catch (error) {
       if (requestSequence === this.resolutionSequence) {
         console.error('[QueuePanel] Track resolution failed:', error);
+        this.renderResolutionError();
         this.showToast('URLを解析できませんでした。しばらくしてから再試行してください。', 'error');
       }
     } finally {
       if (requestSequence === this.resolutionSequence) {
-        this.btnResolve.textContent = this.getResolveButtonText();
-        this.btnResolve.disabled = false;
+        this.updatePrimaryActionState();
         this.btnSearch.disabled = this.activeAddMode !== 'url';
-        this.btnSpotifySearch.disabled = this.activeAddMode !== 'spotify';
-      }
-    }
-  }
-
-  private async resolveSpotifyUrlToLocalSearch(): Promise<void> {
-    const spotifyUrl = this.trackSpotifyUrlInput.value.trim();
-    if (!spotifyUrl) {
-      this.showToast('Spotify URLを入力してください', 'error');
-      this.trackSpotifyUrlInput.focus();
-      return;
-    }
-
-    const requestSequence = ++this.resolutionSequence;
-    this.clearSearchResults(false);
-    this.btnResolve.textContent = '解析中...';
-    this.btnResolve.disabled = true;
-    this.btnSpotifySearch.disabled = true;
-
-    try {
-      const result = await window.electronAPI.resolveTrack(spotifyUrl);
-      if (requestSequence !== this.resolutionSequence) return;
-
-      this.trackSpotifySearchQueryInput.value = result.searchQuery;
-      await this.searchSpotifyLocalTracks(result.searchQuery, requestSequence);
-    } catch (error) {
-      if (requestSequence === this.resolutionSequence) {
-        console.error('[QueuePanel] Spotify URL resolution failed:', error);
-        this.showToast('Spotify URLを解析できませんでした。', 'error');
-      }
-    } finally {
-      if (requestSequence === this.resolutionSequence) {
-        this.btnResolve.textContent = this.getResolveButtonText();
-        this.btnResolve.disabled = false;
-        this.btnSpotifySearch.disabled = false;
-      }
-    }
-  }
-
-  private async searchSpotifyLocalWithEditedQuery(): Promise<void> {
-    const query = this.trackSpotifySearchQueryInput.value.trim();
-    if (!query) {
-      this.showToast('検索コマンドを入力してください', 'error');
-      this.trackSpotifySearchQueryInput.focus();
-      return;
-    }
-
-    const requestSequence = ++this.resolutionSequence;
-    this.clearSearchResults(false);
-    this.btnSpotifySearch.disabled = true;
-    await this.searchSpotifyLocalTracks(query, requestSequence);
-    if (requestSequence === this.resolutionSequence) {
-      this.btnSpotifySearch.disabled = false;
-    }
-  }
-
-  private async searchSpotifyLocalTracks(query: string, requestSequence: number): Promise<void> {
-    this.spotifyTrackCandidates.style.display = 'grid';
-    this.spotifyLocalResults.innerHTML = '<p class="track-candidate-error">ローカルトラックを検索中...</p>';
-
-    try {
-      const results = await window.electronAPI.searchLocalAudioTracks(query);
-      if (requestSequence !== this.resolutionSequence) return;
-      this.renderSpotifyLocalResults(results);
-    } catch (error) {
-      if (requestSequence === this.resolutionSequence) {
-        console.error('[QueuePanel] Spotify local track search failed:', error);
-        this.spotifyLocalResults.innerHTML = '<p class="track-candidate-error">ローカルトラック検索に失敗しました。</p>';
-        this.showToast('ローカルトラック検索に失敗しました', 'error');
-      }
-    }
-  }
-
-  private async resolveLocalAudio(): Promise<void> {
-    const mediaId = this.trackMediaIdInput.value.trim();
-    if (!mediaId) {
-      this.showToast('メディアIDを入力してください', 'error');
-      this.trackMediaIdInput.focus();
-      return;
-    }
-
-    const requestSequence = ++this.resolutionSequence;
-    this.clearSearchResults(false);
-    this.btnResolve.textContent = '解決中...';
-    this.btnResolve.disabled = true;
-    this.btnSearch.disabled = true;
-    this.btnSpotifySearch.disabled = true;
-
-    try {
-      const metadata = await window.electronAPI.getAudioStream(mediaId);
-      if (requestSequence !== this.resolutionSequence) return;
-
-      const track: Track = {
-        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        url: metadata.url,
-        resolvedVideoId: null,
-        title: metadata.title,
-        artist: metadata.artist,
-        thumbnailUrl: '',
-        durationSeconds: null,
-        addedBy: '',
-        service: MusicServiceType.LocalAudio,
-      };
-
-      this.resolvedTrack = track;
-      this.renderLocalAudioPreview(track);
-      this.btnAddPlaylist.disabled = false;
-      this.btnAddQueue.disabled = false;
-    } catch (error) {
-      if (requestSequence === this.resolutionSequence) {
-        console.error('[QueuePanel] Local audio resolution failed:', error);
-        this.showToast('メディアIDを解決できませんでした。', 'error');
-      }
-    } finally {
-      if (requestSequence === this.resolutionSequence) {
-        this.btnResolve.textContent = this.getResolveButtonText();
-        this.btnResolve.disabled = false;
-        this.btnSearch.disabled = this.activeAddMode !== 'url';
-        this.btnSpotifySearch.disabled = this.activeAddMode !== 'spotify';
       }
     }
   }
@@ -625,22 +460,49 @@ export class QueuePanel {
     this.youtubeCandidatesTitle.textContent = 'YouTube';
     this.youtubeMusicCandidatesGroup.style.display = 'block';
     this.btnAddPlaylist.disabled = true;
-    this.btnAddQueue.disabled = true;
+    this.updatePrimaryActionState();
     this.trackCandidates.style.display = 'none';
-    this.spotifyTrackCandidates.style.display = 'none';
     document.getElementById('track-candidate-youtube')!.replaceChildren();
     document.getElementById('track-candidate-youtube-music')!.replaceChildren();
-    this.spotifyLocalResults.replaceChildren();
-    this.localAudioPreview.style.display = 'none';
-    this.localAudioPreview.replaceChildren();
+  }
+
+  private renderResolvingProgress(): void {
+    this.trackCandidates.style.display = 'grid';
+    this.youtubeCandidatesTitle.textContent = 'YouTube';
+    this.youtubeMusicCandidatesGroup.style.display = 'block';
+    this.renderProgressView('track-candidate-youtube', 'YouTube の候補を解析中...');
+    this.renderProgressView('track-candidate-youtube-music', 'YouTube Music の候補を解析中...');
   }
 
   private renderYouTubeMusicLoading(): void {
-    const list = document.getElementById('track-candidate-youtube-music')!;
+    this.renderProgressView('track-candidate-youtube-music', 'YouTube Music の候補を検索中...');
+  }
+
+  private renderProgressView(listId: string, message: string): void {
+    const list = document.getElementById(listId)!;
     const loading = document.createElement('p');
-    loading.className = 'track-candidate-error';
-    loading.textContent = 'YouTube Music の候補を検索中...';
+    loading.className = 'track-candidate-progress';
+    loading.textContent = message;
     list.replaceChildren(loading);
+  }
+
+  private renderResolutionError(): void {
+    this.trackCandidates.style.display = 'grid';
+    this.renderCandidateMessage('track-candidate-youtube', '候補を取得できませんでした。');
+    this.renderCandidateMessage('track-candidate-youtube-music', '候補を取得できませんでした。');
+  }
+
+  private renderCandidateMessage(listId: string, message: string): void {
+    const list = document.getElementById(listId)!;
+    const error = document.createElement('p');
+    error.className = 'track-candidate-error';
+    error.textContent = message;
+    list.replaceChildren(error);
+  }
+
+  private updatePrimaryActionState(): void {
+    this.btnResolve.textContent = this.resolvedTrack ? 'キューに追加' : this.getResolveButtonText();
+    this.btnResolve.disabled = false;
   }
 
   private renderCandidates(
@@ -686,118 +548,33 @@ export class QueuePanel {
       card.append(thumb, copy);
       card.addEventListener('click', () => this.selectCandidate(candidate.track!, card));
       fragment.appendChild(card);
+      if (!this.resolvedTrack) {
+        this.selectCandidate(candidate.track, card);
+      }
     });
     list.appendChild(fragment);
   }
 
-  private renderSpotifyLocalResults(results: LocalAudioSearchResult[]): void {
-    this.spotifyLocalResults.replaceChildren();
-
-    if (results.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'track-candidate-error';
-      empty.textContent = '一致するローカルトラックが見つかりませんでした。';
-      this.spotifyLocalResults.appendChild(empty);
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    results.forEach((result) => {
-      const card = document.createElement('button');
-      card.className = 'track-candidate';
-      card.type = 'button';
-
-      const thumb = document.createElement('img');
-      thumb.className = 'track-candidate-thumb';
-      thumb.src = result.thumbnailUrl || '';
-      thumb.alt = '';
-      if (!result.thumbnailUrl) {
-        thumb.style.background = '#333';
-      }
-
-      const copy = document.createElement('span');
-      copy.className = 'track-candidate-copy';
-      const title = document.createElement('span');
-      title.className = 'track-candidate-title';
-      title.textContent = result.title;
-      const meta = document.createElement('span');
-      meta.className = 'track-candidate-meta';
-      meta.textContent = [
-        result.artist || 'Unknown Artist',
-        result.durationSeconds ? this.formatCandidateDuration(result.durationSeconds).replace(/^ ・ /, '') : null,
-      ].filter(Boolean).join(' ・ ');
-      copy.append(title, meta);
-      card.append(thumb, copy);
-      card.addEventListener('click', () => this.selectLocalAudioSearchResult(result, card));
-      fragment.appendChild(card);
-    });
-
-    this.spotifyLocalResults.appendChild(fragment);
-  }
-
   private selectCandidate(candidate: Omit<Track, 'addedBy'>, card: HTMLButtonElement): void {
+    console.log(`[QueuePanel][candidate-selected] ${JSON.stringify({
+      sourceUrl: candidate.url,
+      selectedVideoId: candidate.resolvedVideoId,
+      title: candidate.title,
+      artist: candidate.artist,
+      service: candidate.service,
+      durationSeconds: candidate.durationSeconds,
+    }, null, 2)}`);
     this.resolvedTrack = {
       ...candidate,
       id: `track-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       addedBy: '',
     };
     this.btnAddPlaylist.disabled = false;
-    this.btnAddQueue.disabled = false;
+    this.updatePrimaryActionState();
     this.trackCandidates.querySelectorAll('.track-candidate.selected').forEach((element) => {
       element.classList.remove('selected');
     });
     card.classList.add('selected');
-  }
-
-  private selectLocalAudioSearchResult(result: LocalAudioSearchResult, card: HTMLButtonElement): void {
-    this.resolvedTrack = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      url: `musicshare://local-audio/${encodeURIComponent(result.id)}`,
-      resolvedVideoId: null,
-      title: result.title,
-      artist: result.artist || 'Unknown Artist',
-      thumbnailUrl: result.thumbnailUrl || '',
-      durationSeconds: result.durationSeconds ?? null,
-      addedBy: '',
-      service: MusicServiceType.LocalAudio,
-    };
-    this.btnAddPlaylist.disabled = false;
-    this.btnAddQueue.disabled = false;
-    this.spotifyLocalResults.querySelectorAll('.track-candidate.selected').forEach((element) => {
-      element.classList.remove('selected');
-    });
-    card.classList.add('selected');
-  }
-
-  private renderLocalAudioPreview(track: Track): void {
-    const card = document.createElement('button');
-    card.className = 'track-candidate selected';
-    card.type = 'button';
-
-    const thumb = document.createElement('span');
-    thumb.className = 'track-candidate-thumb';
-    thumb.textContent = '♪';
-    thumb.setAttribute('aria-hidden', 'true');
-
-    const copy = document.createElement('span');
-    copy.className = 'track-candidate-copy';
-    const title = document.createElement('span');
-    title.className = 'track-candidate-title';
-    title.textContent = track.title;
-    const meta = document.createElement('span');
-    meta.className = 'track-candidate-meta';
-    meta.textContent = `${track.artist || 'Unknown Artist'} ・ ${track.url}`;
-    copy.append(title, meta);
-    card.append(thumb, copy);
-    card.addEventListener('click', () => {
-      this.resolvedTrack = track;
-      card.classList.add('selected');
-      this.btnAddPlaylist.disabled = false;
-      this.btnAddQueue.disabled = false;
-    });
-
-    this.localAudioPreview.replaceChildren(card);
-    this.localAudioPreview.style.display = 'flex';
   }
 
   private formatCandidateDuration(durationSeconds: number | null): string {

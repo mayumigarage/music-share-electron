@@ -33,9 +33,10 @@ export class PlayerProxy {
     this.videoPlayer.setVisible(isVideo);
   }
 
-  loadTrack(track: Track): Promise<void> {
+  async loadTrack(track: Track): Promise<void> {
     if (this.playerType === RoomPlayerType.HtmlVideo) {
-      return this.videoPlayer.loadTrack(track);
+      const sourceUrl = await window.electronAPI.resolveHtmlVideoSource(track);
+      return this.videoPlayer.loadTrack({ ...track, url: sourceUrl });
     }
     if (!track.resolvedVideoId) {
       return Promise.reject(new Error('YouTube Music の再生候補を解決できませんでした'));

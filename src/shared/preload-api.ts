@@ -12,7 +12,7 @@
  * - contextIsolation: true
  */
 
-import type { AudioStreamMetadata, LocalAudioSearchResult, MusicServiceType } from './models';
+import type { AudioStreamMetadata, LocalAudioSearchResult, MusicServiceType, Track } from './models';
 
 // ============================================================================
 // Player Message Types
@@ -138,6 +138,12 @@ export interface ElectronAPI {
    * @returns The resolved track metadata or an error
    */
   resolveTrack: (url: string, options?: TrackResolveOptions) => Promise<TrackSearchResult>;
+
+  /**
+   * Resolve a queued track to a direct media URL suitable for HTMLVideoElement.
+   * The original queue URL is preserved; this is only used at playback time.
+   */
+  resolveHtmlVideoSource: (track: Track) => Promise<string>;
 
   /**
    * Resolve a local media ID to audio metadata and a playback URL.
