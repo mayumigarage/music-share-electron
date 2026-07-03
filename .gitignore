@@ -4,6 +4,11 @@ node_modules/
 yarn-error.log*
 npm-debug.log*
 
+# Local Electron runtime overrides
+node_modules/electron/dist/Electron.app/
+node_modules/electron/path.txt
+path.txt
+
 # Build outputs
 dist/
 build/
