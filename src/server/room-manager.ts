@@ -187,6 +187,12 @@ export class RoomManager {
   updatePlayerState(roomId: string, playerState: PlayerState): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
+    if (
+      playerState.currentTrack &&
+      !room.queue.some((track) => track.id === playerState.currentTrack?.id)
+    ) {
+      return false;
+    }
     room.playerState = {
       ...playerState,
       isPlaying: playerState.currentTrack ? playerState.isPlaying : false,

@@ -4,6 +4,7 @@
  */
 
 import type { TrackHistory } from '../../shared/models.js';
+import { openTrackOnYouTube } from './track-links.js';
 
 export class HistoryPanel {
   private history: TrackHistory[] = [];
@@ -65,7 +66,7 @@ export class HistoryPanel {
     el.append(thumb, info, service);
 
     el.addEventListener('dblclick', () => {
-      if (track.url) window.electronAPI.openExternal(track.url);
+      openTrackOnYouTube(track);
     });
 
     return el;

@@ -101,6 +101,29 @@ export interface LocalAudioSearchResult {
   durationSeconds: number | null;
 }
 
+/** A track saved in a local, per-user playlist. */
+export interface PlaylistTrack extends Track {
+  /** Unix timestamp (ms) when this track was saved to the playlist */
+  addedAt: number;
+}
+
+/** Local playlist category. Server-side shared queues stay separate. */
+export type PlaylistKind = 'favorites' | 'manual' | 'recent';
+
+/** A local, per-user playlist stored in the renderer. */
+export interface Playlist {
+  id: string;
+  name: string;
+  icon: string;
+  kind: PlaylistKind;
+  isBuiltin: boolean;
+  tracks: PlaylistTrack[];
+  /** Unix timestamp (ms) */
+  createdAt: number;
+  /** Unix timestamp (ms) */
+  updatedAt: number;
+}
+
 /** Represents a room (the core aggregation root) */
 export interface Room {
   id: string;

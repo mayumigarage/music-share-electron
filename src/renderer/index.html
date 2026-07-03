@@ -317,7 +317,8 @@
 
     #app-layout.left-collapsed .sidebar-title,
     #app-layout.left-collapsed .sidebar-count,
-    #app-layout.left-collapsed .playlist-grid {
+    #app-layout.left-collapsed .playlist-grid,
+    #app-layout.left-collapsed .playlist-create {
       display: none;
     }
 
@@ -394,6 +395,9 @@
     }
 
     .playlist-create {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
       margin-top: auto;
       padding: 12px 16px;
     }
@@ -511,6 +515,20 @@
       transform: translateY(-1px);
     }
 
+    .btn:disabled,
+    .btn-icon:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+      transform: none;
+    }
+
+    .btn:disabled:hover,
+    .btn-icon:disabled:hover {
+      background: var(--glass-card);
+      border-color: var(--border);
+      color: inherit;
+    }
+
     .btn-primary {
       background: linear-gradient(135deg, var(--accent), #7bf1b2);
       border-color: rgba(32, 216, 117, 0.68);
@@ -539,12 +557,15 @@
     }
 
     #center-tabs {
+      position: relative;
+      z-index: 1200;
       display: flex;
       border-bottom: 1px solid var(--border);
       padding: 0 16px;
       gap: 4px;
       background: rgba(255, 255, 255, 0.04);
       backdrop-filter: blur(20px) saturate(140%);
+      overflow: visible;
     }
 
     #center-tabs .sort-wrapper {
@@ -583,6 +604,8 @@
     }
 
     #center-content {
+      position: relative;
+      z-index: 0;
       flex: 1;
       overflow-y: auto;
       padding: 16px;
@@ -601,6 +624,20 @@
       gap: 6px;
       font-size: 14px;
       font-weight: 700;
+    }
+
+    .queue-time-to-last {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.055);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
     }
 
     .track-list {
@@ -801,6 +838,31 @@
         linear-gradient(120deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
       backdrop-filter: blur(20px) saturate(145%);
       box-shadow: var(--shadow-card);
+    }
+
+    .playlist-hero-copy {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .playlist-hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .playlist-player-select {
+      width: auto;
+      min-width: 132px;
+      height: 32px;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-button);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 12px;
+      outline: none;
     }
 
     .playlist-hero-cover {
@@ -1492,6 +1554,20 @@
       width: auto;
     }
 
+    .playlist-name-modal {
+      width: min(420px, 92vw);
+    }
+
+    .playlist-import-modal {
+      width: min(520px, 92vw);
+    }
+
+    .modal-message {
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
     /* ── Add Track Search ── */
     .track-add-modal {
       width: min(980px, 92vw);
@@ -1800,23 +1876,14 @@
       <div class="sidebar-header">
         <span class="sidebar-title">プレイリスト</span>
         <div class="sidebar-header-actions">
-          <span class="sidebar-count">4件</span>
+          <span class="sidebar-count" id="playlist-count">0件</span>
           <button class="btn-icon sidebar-toggle" id="btn-toggle-left-sidebar" type="button" title="左サイドバーを閉じる" aria-label="左サイドバーを閉じる" aria-expanded="true"><span data-hero-icon="chevron-left"></span></button>
         </div>
       </div>
-      <div class="playlist-grid" id="playlist-grid">
-        <button class="playlist-card active" data-playlist="favorites" data-playlist-name="お気に入り" type="button">
-          <span class="playlist-cover" data-playlist-icon="heart-solid"><span data-hero-icon="heart-solid"></span></span><span class="playlist-name">お気に入り</span>
-        </button>
-        <button class="playlist-card" data-playlist="work" data-playlist-name="作業用BGM" type="button">
-          <span class="playlist-cover" data-playlist-icon="musical-note"><span data-hero-icon="musical-note"></span></span><span class="playlist-name">作業用BGM</span>
-        </button>
-        <button class="playlist-card" data-playlist="drive" data-playlist-name="ドライブ用" type="button">
-          <span class="playlist-cover" data-playlist-icon="queue-list"><span data-hero-icon="queue-list"></span></span><span class="playlist-name">ドライブ用</span>
-        </button>
-        <button class="playlist-card" data-playlist="recent" data-playlist-name="最近追加した曲" type="button">
-          <span class="playlist-cover" data-playlist-icon="clock"><span data-hero-icon="clock"></span></span><span class="playlist-name">最近追加した曲</span>
-        </button>
+      <div class="playlist-grid" id="playlist-grid"></div>
+      <div class="playlist-create">
+        <button class="btn" id="btn-create-playlist" type="button"><span data-hero-icon="plus"></span><span>作成</span></button>
+        <button class="btn" id="btn-import-playlist" type="button"><span data-hero-icon="arrow-down-tray"></span><span>インポート</span></button>
       </div>
     </aside>
     <div class="panel-resizer" id="left-panel-resizer" role="separator" aria-orientation="vertical" aria-label="左サイドパネルの幅を調整"></div>
@@ -1827,13 +1894,31 @@
         <div id="playlist-center-panel" class="center-view">
           <div class="playlist-hero">
             <div class="playlist-hero-cover" id="playlist-hero-cover" data-playlist-icon="heart-solid"><span data-hero-icon="heart-solid"></span></div>
-            <div>
+            <div class="playlist-hero-copy">
               <div class="playlist-hero-label">プレイリスト</div>
               <div class="playlist-hero-title" id="playlist-center-title">お気に入り</div>
-              <div class="playlist-hero-description">プレイリスト機能は今後のフェーズで楽曲管理に対応します。</div>
+              <div class="playlist-hero-description" id="playlist-center-description">0曲を保存中</div>
+            </div>
+            <div class="playlist-hero-actions">
+              <select class="playlist-player-select" id="select-playlist-player-type" aria-label="プレイリスト再生方式">
+                <option value="youtube">YouTube</option>
+                <option value="html-video">videoタグ</option>
+              </select>
+              <select class="playlist-player-select" id="select-playlist-sort" aria-label="プレイリストをソート">
+                <option value="">ソート</option>
+                <option value="title-asc">曲名 A → Z</option>
+                <option value="title-desc">曲名 Z → A</option>
+                <option value="duration-asc">短い順</option>
+                <option value="duration-desc">長い順</option>
+                <option value="added-newest">新しい順</option>
+                <option value="added-oldest">古い順</option>
+              </select>
+              <button class="btn-icon" id="btn-play-playlist" type="button" title="このプレイリストを再生" aria-label="このプレイリストを再生"><span data-hero-icon="play-solid"></span></button>
+              <button class="btn-icon" id="btn-rename-playlist" type="button" title="名前を変更" aria-label="名前を変更"><span data-hero-icon="pencil-square"></span></button>
+              <button class="btn-icon" id="btn-delete-playlist" type="button" title="削除" aria-label="削除"><span data-hero-icon="trash"></span></button>
             </div>
           </div>
-          <div class="track-list" id="favorite-playlist-list"></div>
+          <div class="track-list" id="playlist-track-list"></div>
         </div>
         <div id="shared-center-panel" class="center-view">
           <div id="center-tabs">
@@ -1843,11 +1928,13 @@
             <div class="sort-wrapper">
               <button class="btn header-action" id="btn-sort" type="button" aria-expanded="false"><span data-hero-icon="bars-arrow-down"></span><span>ソート</span></button>
               <div id="sort-menu" role="menu" aria-label="共有キューをソート">
-                <button class="sort-menu-item" data-sort="title-asc" type="button">曲名（A → Z）</button>
-                <button class="sort-menu-item" data-sort="title-desc" type="button">曲名（Z → A）</button>
-                <button class="sort-menu-item" data-sort="duration-asc" type="button">曲の長さ（短い順）</button>
-                <button class="sort-menu-item" data-sort="duration-desc" type="button">曲の長さ（長い順）</button>
-                <button class="sort-menu-item" data-sort="member-round-robin" type="button">メンバーごとに1曲ずつ</button>
+                <button class="sort-menu-item" data-sort="title-asc" data-sort-scope="all" type="button">曲名（A → Z）</button>
+                <button class="sort-menu-item" data-sort="title-desc" data-sort-scope="all" type="button">曲名（Z → A）</button>
+                <button class="sort-menu-item" data-sort="duration-asc" data-sort-scope="all" type="button">曲の長さ（短い順）</button>
+                <button class="sort-menu-item" data-sort="duration-desc" data-sort-scope="all" type="button">曲の長さ（長い順）</button>
+                <button class="sort-menu-item" data-sort="added-newest" data-sort-scope="playlist" type="button">追加日（新しい順）</button>
+                <button class="sort-menu-item" data-sort="added-oldest" data-sort-scope="playlist" type="button">追加日（古い順）</button>
+                <button class="sort-menu-item" data-sort="member-round-robin" data-sort-scope="queue" type="button">メンバーごとに1曲ずつ</button>
               </div>
             </div>
           </div>
@@ -1864,6 +1951,7 @@
           </div>
           <div class="panel-header">
             <span class="panel-title"><span data-hero-icon="queue-list"></span> 再生待ちのキュー (<span id="queue-count">0</span>曲)</span>
+            <span class="queue-time-to-last" id="queue-time-to-last" title="最後の曲が始まるまでの推定時間です">最後の曲まで --</span>
           </div>
           <div class="track-list" id="queue-list"></div>
         </div>
@@ -1977,6 +2065,46 @@
 
   <!-- Custom Context Menu -->
   <div id="context-menu"></div>
+
+  <!-- Playlist Modal (inline) -->
+  <div id="modal-overlay-playlist" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2100;display:none;align-items:center;justify-content:center;">
+    <div class="modal playlist-name-modal">
+      <div class="modal-header" id="playlist-modal-title">プレイリスト</div>
+      <div class="modal-body">
+        <p class="modal-message" id="playlist-modal-message" style="display:none;"></p>
+        <div class="form-group" id="playlist-modal-input-group">
+          <label for="input-playlist-name">名前</label>
+          <input type="text" id="input-playlist-name" placeholder="プレイリスト名" />
+        </div>
+        <div class="form-group" id="playlist-modal-select-group" style="display:none;">
+          <label for="select-playlist-target">保存先</label>
+          <select id="select-playlist-target" aria-label="保存先プレイリスト"></select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btn-playlist-modal-cancel" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="btn-playlist-modal-submit" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Playlist Import Modal (inline) -->
+  <div id="modal-overlay-import-playlist" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2110;display:none;align-items:center;justify-content:center;">
+    <div class="modal playlist-import-modal">
+      <div class="modal-header"><span data-hero-icon="arrow-down-tray"></span> プレイリストをインポート</div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="input-playlist-import-url">URL</label>
+          <input type="text" id="input-playlist-import-url" placeholder="Spotify または YouTube のプレイリストURL" />
+        </div>
+        <p class="modal-message" id="playlist-import-status" style="display:none;"></p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btn-playlist-import-cancel" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="btn-playlist-import-submit" type="button">インポート</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Add Track Modal (inline) -->
   <div id="modal-overlay-track" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:none;align-items:center;justify-content:center;">

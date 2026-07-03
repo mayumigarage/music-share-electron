@@ -2,6 +2,7 @@ import { createElement, type ComponentType, type SVGProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   ArrowDownIcon,
+  ArrowDownTrayIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowRightOnRectangleIcon,
@@ -18,6 +19,7 @@ import {
   MagnifyingGlassIcon,
   MusicalNoteIcon,
   PauseIcon,
+  PencilSquareIcon,
   PlayIcon,
   PlusIcon,
   QueueListIcon,
@@ -38,6 +40,7 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 export type IconName =
   | 'arrow-down'
+  | 'arrow-down-tray'
   | 'arrow-left'
   | 'arrow-right'
   | 'arrow-right-on-rectangle'
@@ -56,6 +59,7 @@ export type IconName =
   | 'musical-note'
   | 'pause'
   | 'pause-solid'
+  | 'pencil-square'
   | 'play'
   | 'play-solid'
   | 'plus'
@@ -69,6 +73,7 @@ export type IconName =
 
 const icons: Record<IconName, IconComponent> = {
   'arrow-down': ArrowDownIcon,
+  'arrow-down-tray': ArrowDownTrayIcon,
   'arrow-left': ArrowLeftIcon,
   'arrow-right': ArrowRightIcon,
   'arrow-right-on-rectangle': ArrowRightOnRectangleIcon,
@@ -87,6 +92,7 @@ const icons: Record<IconName, IconComponent> = {
   'musical-note': MusicalNoteIcon,
   pause: PauseIcon,
   'pause-solid': PauseSolidIcon,
+  'pencil-square': PencilSquareIcon,
   play: PlayIcon,
   'play-solid': PlaySolidIcon,
   plus: PlusIcon,

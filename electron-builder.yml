@@ -8,6 +8,10 @@ files:
 extraResources:
   - from: cookies.txt
     to: cookies.txt
+  - from: resources
+    to: .
+    filter:
+      - youtube-data-api-key.txt
 
 # CastLabs 製 Electron フォークのバイナリを直接使用（公式ミラーには存在しないバージョンのため）
 electronDist: ./node_modules/electron/dist

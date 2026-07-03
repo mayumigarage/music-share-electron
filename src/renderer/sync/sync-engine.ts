@@ -4,8 +4,8 @@
  */
 
 import type { WebSocketClient } from './websocket-client.js';
-import type { PlayerProxy } from './player-proxy.js';
-import { RoomPlayerType, type Room, type User, type PlayerState } from '../../shared/models.js';
+import { StalePlayerLoadError, type PlayerProxy } from './player-proxy.js';
+import { RoomPlayerType, type Room, type User, type PlayerState, type Track } from '../../shared/models.js';
 
 export class SyncEngine {
   private room: Room | null = null;
@@ -28,6 +28,8 @@ export class SyncEngine {
   private lastPlayerError = '';
   private lastPlayerErrorAt = 0;
   private recoveringTrackIds = new Set<string>();
+  private loadedTrackId: string | null = null;
+  private activeTrackLoad: { trackId: string; promise: Promise<void> } | null = null;
 
   constructor(
     private wsClient: WebSocketClient,
@@ -40,7 +42,10 @@ export class SyncEngine {
     this.room = room;
     this.currentUser = user;
     this.isHost = !!user && !!room && room.hostId === user.id;
+    this.loadedTrackId = null;
+    this.activeTrackLoad = null;
     this.playerProxy.setPlayerType(room?.playerType ?? RoomPlayerType.YouTube);
+    this.refreshUpcomingTrackPreload();
 
     this.stopBroadcast();
 
@@ -76,14 +81,18 @@ export class SyncEngine {
       }
       if (!state.currentTrack) {
         this.lastBroadcastState = state;
+        this.loadedTrackId = null;
+        this.activeTrackLoad = null;
         this.playerProxy.stop();
+        this.refreshUpcomingTrackPreload();
         this.publishHostPlayerState();
         return;
       }
-      if (trackChanged && state.currentTrack) {
+      if (trackChanged || this.loadedTrackId !== state.currentTrack.id) {
         try {
-          await this.playerProxy.loadTrack(state.currentTrack);
+          await this.ensureTrackLoaded(state.currentTrack);
         } catch (err) {
+          if (err instanceof StalePlayerLoadError) return;
           console.error('[SyncEngine] Host loadTrack failed:', err);
           this.handlePlaybackFailure(err instanceof Error ? err.message : String(err));
           return;
@@ -96,6 +105,7 @@ export class SyncEngine {
       } else {
         this.playerProxy.pause();
       }
+      this.refreshUpcomingTrackPreload();
       return;
     }
     await this.handleGuestPlayerState(state);
@@ -117,6 +127,18 @@ export class SyncEngine {
       this.lastBroadcastState.positionSeconds = seconds;
       this.lastBroadcastState.updatedAt = Date.now();
     }
+  }
+
+  refreshUpcomingTrackPreload(): void {
+    if (!this.room) {
+      this.playerProxy.preloadUpcomingTracks([], null);
+      return;
+    }
+
+    this.playerProxy.preloadUpcomingTracks(
+      this.room.queue,
+      this.room.playerState.currentTrack?.id ?? null,
+    );
   }
 
   broadcastPlayerState(): void {
@@ -162,16 +184,20 @@ export class SyncEngine {
     // Load track if changed
     const currentTrackId = this.room?.playerState.currentTrack?.id;
     if (!state.currentTrack) {
+      this.loadedTrackId = null;
+      this.activeTrackLoad = null;
       this.playerProxy.stop();
       if (this.room) {
         this.room.playerState = state;
       }
+      this.refreshUpcomingTrackPreload();
       return;
     }
-    if (state.currentTrack.id !== currentTrackId) {
+    if (state.currentTrack.id !== currentTrackId || this.loadedTrackId !== state.currentTrack.id) {
       try {
-        await this.playerProxy.loadTrack(state.currentTrack);
+        await this.ensureTrackLoaded(state.currentTrack);
       } catch (err) {
+        if (err instanceof StalePlayerLoadError) return;
         console.error('[SyncEngine] Guest loadTrack failed:', err);
         return;
       }
@@ -197,6 +223,7 @@ export class SyncEngine {
     if (this.room) {
       this.room.playerState = state;
     }
+    this.refreshUpcomingTrackPreload();
   }
 
   // ── Player Message Binding ──
@@ -276,6 +303,8 @@ export class SyncEngine {
           break;
         }
         case 'stopped': {
+          this.loadedTrackId = null;
+          this.activeTrackLoad = null;
           if (this.lastBroadcastState) {
             this.lastBroadcastState.isPlaying = false;
             this.lastBroadcastState.positionSeconds = 0;
@@ -290,6 +319,10 @@ export class SyncEngine {
         }
         case 'error': {
           const errorDetail = String(msg.error);
+          if (this.isBenignPlaybackCancellation(errorDetail)) {
+            console.debug('[PlayerProxy] Ignored benign playback cancellation:', errorDetail);
+            return;
+          }
 
           // Deduplicate: ignore the same error within 2 seconds
           const now = Date.now();
@@ -318,6 +351,10 @@ export class SyncEngine {
     if (!this.isHost || !this.room || !this.lastBroadcastState) return;
 
     const state = this.lastBroadcastState;
+    if (state.currentTrack && !this.isTrackInQueue(state.currentTrack.id)) {
+      console.warn('[SyncEngine] Ignored stale local player state for a track outside the queue:', state.currentTrack.id);
+      return;
+    }
     this.room.playerState = state;
     this.onHostPlayerStateObserved?.(state);
   }
@@ -348,6 +385,35 @@ export class SyncEngine {
       }
       this.recoveringTrackIds.delete(failedTrack.id);
     }, 0);
+  }
+
+  private isBenignPlaybackCancellation(errorDetail: string): boolean {
+    return /play\(\) request was interrupted/i.test(errorDetail);
+  }
+
+  private isTrackInQueue(trackId: string): boolean {
+    return this.room?.queue.some((track) => track.id === trackId) ?? false;
+  }
+
+  private async ensureTrackLoaded(track: Track): Promise<void> {
+    if (this.loadedTrackId === track.id) return;
+    if (this.activeTrackLoad?.trackId === track.id) {
+      await this.activeTrackLoad.promise;
+      return;
+    }
+
+    const promise = this.playerProxy.loadTrack(track)
+      .then(() => {
+        this.loadedTrackId = track.id;
+      })
+      .finally(() => {
+        if (this.activeTrackLoad?.trackId === track.id) {
+          this.activeTrackLoad = null;
+        }
+      });
+
+    this.activeTrackLoad = { trackId: track.id, promise };
+    await promise;
   }
 
 }

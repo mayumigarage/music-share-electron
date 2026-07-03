@@ -262,6 +262,7 @@ describe('RoomManager', () => {
         addedBy: 'Alice',
         service: MusicServiceType.YouTube,
       };
+      manager.addTrack(room.id, track);
       expect(manager.updatePlayerState(room.id, {
         isPlaying: true,
         positionSeconds: 30,
@@ -270,6 +271,37 @@ describe('RoomManager', () => {
       })).toBe(true);
       expect(manager.getRoom(room.id)!.playerState.isPlaying).toBe(true);
       expect(manager.getRoom(room.id)!.playerState.positionSeconds).toBe(30);
+    });
+
+    it('rejects stale updates for tracks that already left the queue', () => {
+      const { room } = manager.createRoom({
+        roomName: 'Test',
+        userName: 'Alice',
+        mode: RoomMode.Individual,
+        maxGuests: 5,
+      });
+      const t1: Track = {
+        id: 't1', url: '', resolvedVideoId: null, title: 'A', artist: '', thumbnailUrl: '',
+        durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
+      };
+      const t2: Track = {
+        id: 't2', url: '', resolvedVideoId: null, title: 'B', artist: '', thumbnailUrl: '',
+        durationSeconds: null, addedBy: 'x', service: MusicServiceType.YouTube,
+      };
+      manager.addTrack(room.id, t1);
+      manager.addTrack(room.id, t2);
+      expect(manager.trackFinished(room.id, 't1')).toBe(true);
+
+      expect(manager.updatePlayerState(room.id, {
+        isPlaying: true,
+        positionSeconds: 179,
+        currentTrack: t1,
+        updatedAt: Date.now(),
+      })).toBe(false);
+
+      const updated = manager.getRoom(room.id)!;
+      expect(updated.playerState.currentTrack!.id).toBe('t2');
+      expect(updated.playerState.positionSeconds).toBe(0);
     });
   });
 

@@ -4,11 +4,12 @@
  */
 
 import type { WebSocketClient } from '../sync/websocket-client.js';
-import { MusicServiceType, type Track } from '../../shared/models.js';
+import { MusicServiceType, type PlayerState, type Track } from '../../shared/models.js';
 import type { TrackSearchCandidate, YouTubeMusicCandidatesResult } from '../../shared/preload-api.js';
 import '../../shared/preload-api.js';
-import type { FavoritesStore } from './favorites-store.js';
+import { FAVORITES_PLAYLIST_ID, type PlaylistStore } from './playlist-store.js';
 import { getIconMarkup, setIcon, setIconButton, type IconName } from './icons.js';
+import { openTrackOnYouTube } from './track-links.js';
 
 type TrackAddMode = 'url';
 
@@ -16,9 +17,11 @@ export class QueuePanel {
   private queue: Track[] = [];
   private dragSrcIndex: number | null = null;
   private playingTrackId: string | null = null;
+  private playerState: PlayerState | null = null;
 
   private listEl = document.getElementById('queue-list') as HTMLElement;
   private countEl = document.getElementById('queue-count') as HTMLElement;
+  private timeToLastEl = document.getElementById('queue-time-to-last') as HTMLElement | null;
   private addBtn = document.getElementById('btn-add-track') as HTMLButtonElement | null;
 
   // Track add modal refs
@@ -43,8 +46,9 @@ export class QueuePanel {
   constructor(
     private wsClient: WebSocketClient,
     private showToast: (msg: string, type?: 'info' | 'success' | 'error') => void,
-    private favoritesStore: FavoritesStore,
-    private onFavoritesChanged: () => void,
+    private playlistStore: PlaylistStore,
+    private selectPlaylistForTrack: (track: Track) => Promise<string | null>,
+    private onPlaylistsChanged: () => void,
   ) {}
 
   init(): void {
@@ -58,7 +62,9 @@ export class QueuePanel {
     this.btnResolve.addEventListener('click', () => this.handlePrimaryTrackAction());
     this.btnSearch.addEventListener('click', () => this.searchWithEditedQuery());
     this.btnAddPlaylist.addEventListener('click', () => {
-      this.showToast('プレイリストへの保存機能は今後追加されます', 'info');
+      if (this.resolvedTrack) {
+        void this.addTrackToChosenPlaylist(this.resolvedTrack);
+      }
     });
     window.electronAPI.onYouTubeMusicCandidates((result) => {
       if (result.requestId !== this.activeResolutionRequestId || this.trackOverlay.style.display === 'none') {
@@ -90,6 +96,13 @@ export class QueuePanel {
   setQueue(queue: Track[]): void {
     this.queue = queue;
     this.render();
+  }
+
+  setPlayerState(state: PlayerState): void {
+    this.playerState = state;
+    this.playingTrackId = state.currentTrack?.id ?? null;
+    this.renderTimeToLastTrack();
+    this.setPlayingTrack(this.playingTrackId);
   }
 
   setPlayingTrack(trackId: string | null): void {
@@ -150,6 +163,7 @@ export class QueuePanel {
 
   private render(): void {
     this.countEl.textContent = String(this.queue.length);
+    this.renderTimeToLastTrack();
     this.listEl.innerHTML = '';
 
     if (this.queue.length === 0) {
@@ -188,7 +202,7 @@ export class QueuePanel {
 
     const meta = document.createElement('div');
     meta.className = 'track-meta';
-    meta.textContent = track.artist;
+    meta.textContent = [track.artist, this.formatDuration(track.durationSeconds)].filter(Boolean).join(' ・ ');
 
     info.append(title, meta);
 
@@ -198,17 +212,17 @@ export class QueuePanel {
     addedBy.title = `追加者: ${track.addedBy}`;
 
     const favoriteBtn = document.createElement('button');
-    const isFavorite = this.favoritesStore.has(track.id);
+    const isFavorite = this.playlistStore.hasTrack(FAVORITES_PLAYLIST_ID, track);
     favoriteBtn.className = `track-favorite${isFavorite ? ' is-favorite' : ''}`;
     favoriteBtn.title = isFavorite ? 'お気に入りから削除' : 'お気に入りに追加';
     favoriteBtn.setAttribute('aria-label', favoriteBtn.title);
     setIcon(favoriteBtn, isFavorite ? 'heart-solid' : 'heart', { size: 20 });
     favoriteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const added = this.favoritesStore.toggle(track);
+      const added = this.playlistStore.toggleFavorite(track);
       this.showToast(added ? 'お気に入りに追加しました' : 'お気に入りから削除しました', 'success');
       this.render();
-      this.onFavoritesChanged();
+      this.onPlaylistsChanged();
     });
 
     const actions = document.createElement('div');
@@ -276,11 +290,9 @@ export class QueuePanel {
       this.showContextMenuAt(e.clientX, e.clientY, track, index);
     });
 
-    // Double-click to open link
+    // Double-click to open the YouTube link for the selected playback candidate.
     el.addEventListener('dblclick', () => {
-      if (track.url) {
-        window.electronAPI.openExternal(track.url);
-      }
+      openTrackOnYouTube(track);
     });
 
     return el;
@@ -298,7 +310,8 @@ export class QueuePanel {
       { label: '上へ', icon: 'arrow-up', action: () => this.moveTrack(index, index - 1), disabled: index === 0 },
       { label: '下へ', icon: 'arrow-down', action: () => this.moveTrack(index, index + 1), disabled: index === this.queue.length - 1 },
       { separator: true },
-      { label: 'リンクを開く', icon: 'arrow-right', action: () => window.electronAPI.openExternal(track.url) },
+      { label: 'プレイリストに追加', icon: 'plus', action: () => { void this.addTrackToChosenPlaylist(track); } },
+      { label: 'リンクを開く', icon: 'arrow-right', action: () => openTrackOnYouTube(track) },
       { separator: true },
       { label: '削除', icon: 'trash', action: () => this.wsClient.removeTrack(track.id), danger: true },
     ];
@@ -550,7 +563,7 @@ export class QueuePanel {
       title.textContent = candidate.track.title;
       const meta = document.createElement('span');
       meta.className = 'track-candidate-meta';
-      meta.textContent = `${candidate.track.artist}${this.formatCandidateDuration(candidate.track.durationSeconds)}`;
+      meta.textContent = [candidate.track.artist, this.formatDuration(candidate.track.durationSeconds)].filter(Boolean).join(' ・ ');
       copy.append(title, meta);
       card.append(thumb, copy);
       card.addEventListener('click', () => this.selectCandidate(candidate.track!, card));
@@ -584,16 +597,93 @@ export class QueuePanel {
     card.classList.add('selected');
   }
 
-  private formatCandidateDuration(durationSeconds: number | null): string {
-    if (durationSeconds === null || !Number.isFinite(durationSeconds)) return '';
+  private renderTimeToLastTrack(): void {
+    if (!this.timeToLastEl) return;
+
+    if (this.queue.length === 0) {
+      this.timeToLastEl.textContent = '最後の曲まで --';
+      this.timeToLastEl.title = 'キューに曲がありません';
+      return;
+    }
+
+    if (this.queue.length === 1) {
+      this.timeToLastEl.textContent = '最後の曲まで 0:00';
+      this.timeToLastEl.title = '次に再生される曲が最後の曲です';
+      return;
+    }
+
+    const currentTrackId = this.playerState?.currentTrack?.id ?? this.playingTrackId;
+    const currentIndex = currentTrackId
+      ? this.queue.findIndex((track) => track.id === currentTrackId)
+      : -1;
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const tracksBeforeLast = this.queue.slice(startIndex, -1);
+
+    let knownSeconds = 0;
+    let unknownCount = 0;
+    for (const track of tracksBeforeLast) {
+      const durationSeconds = this.getTrackDurationForEstimate(track);
+      if (durationSeconds === null) {
+        unknownCount += 1;
+        continue;
+      }
+
+      if (track.id === currentTrackId && this.playerState?.currentTrack?.id === track.id) {
+        knownSeconds += Math.max(0, durationSeconds - this.playerState.positionSeconds);
+      } else {
+        knownSeconds += durationSeconds;
+      }
+    }
+
+    const formatted = this.formatDuration(knownSeconds) ?? '0:00';
+    const unknownSuffix = unknownCount > 0 ? ` + 不明${unknownCount}曲` : '';
+    this.timeToLastEl.textContent = `最後の曲まで ${formatted}${unknownSuffix}`;
+    this.timeToLastEl.title = unknownCount > 0
+      ? '曲の長さを取得できない項目は合計に含めていません'
+      : '最後の曲が始まるまでの推定時間です';
+  }
+
+  private getTrackDurationForEstimate(track: Track): number | null {
+    if (track.id === this.playerState?.currentTrack?.id && this.playerState.currentTrack.durationSeconds !== null) {
+      return this.playerState.currentTrack.durationSeconds;
+    }
+    return track.durationSeconds;
+  }
+
+  private formatDuration(durationSeconds: number | null): string | null {
+    if (durationSeconds === null || !Number.isFinite(durationSeconds)) return null;
     const minutes = Math.floor(durationSeconds / 60);
     const seconds = Math.floor(durationSeconds % 60).toString().padStart(2, '0');
-    return ` ・ ${minutes}:${seconds}`;
+    return `${minutes}:${seconds}`;
   }
 
   private addResolvedTrack(): void {
     if (!this.resolvedTrack) return;
     this.wsClient.addTrack(this.resolvedTrack);
     this.closeAddModal();
+  }
+
+  private async addTrackToChosenPlaylist(track: Track): Promise<void> {
+    const playlistId = await this.selectPlaylistForTrack(track);
+    if (!playlistId) return;
+
+    const playlist = this.playlistStore.getPlaylist(playlistId);
+    if (!playlist || !this.playlistStore.isWritablePlaylist(playlistId)) {
+      this.showToast('保存先のプレイリストを選択してください', 'error');
+      return;
+    }
+
+    const result = this.playlistStore.addTrack(playlistId, track);
+    if (result === 'duplicate') {
+      this.showToast(`「${playlist.name}」にはすでに追加されています`, 'info');
+      return;
+    }
+    if (result !== 'added') {
+      this.showToast('プレイリストに追加できませんでした', 'error');
+      return;
+    }
+
+    this.showToast(`「${playlist.name}」に追加しました`, 'success');
+    this.onPlaylistsChanged();
   }
 }

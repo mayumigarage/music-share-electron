@@ -9,6 +9,7 @@ Spotify／Apple Music の曲は、追加時に元サービスの曲名・アー�
 - [Node.js](https://nodejs.org/) 18 以上
 - npm（Node.js に同梱）
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)（Spotify／Apple Music 等のリンクを再生するために必須）
+- YouTube Data API v3 の API キー（YouTube プレイリストをインポートする場合）
 - Windows 10/11 または macOS（開発・実行ともに対応）
 
 ## インストール
@@ -45,6 +46,31 @@ yt-dlp --version
 ```
 
 > Windows のパッケージ版には `tools/yt-dlp.exe` を同梱します。macOS のパッケージ版は `/opt/homebrew/bin/yt-dlp`、`/usr/local/bin/yt-dlp`、PATH の順に `yt-dlp` を探します。
+
+### YouTube Data API キーを設定する
+
+YouTube プレイリストのインポートは YouTube Data API v3 を使用します。Google Cloud Console で API キーを作成し、アプリ起動前に `YOUTUBE_DATA_API_KEY` を設定してください。
+
+PowerShell:
+
+```powershell
+$env:YOUTUBE_DATA_API_KEY = "your-api-key"
+npm start
+```
+
+macOS / Linux:
+
+```bash
+YOUTUBE_DATA_API_KEY="your-api-key" npm start
+```
+
+パッケージ版に同梱する場合は、ローカルに次のファイルを作成して API キーを1行で保存します。
+
+```text
+resources/youtube-data-api-key.txt
+```
+
+`npm run dist:win` / `npm run dist:mac` 実行時に `youtube-data-api-key.txt` としてアプリの resources にコピーされます。この実ファイルは git ignore 済みです。
 
 ## 使い方
 

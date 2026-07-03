@@ -7,9 +7,10 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AudioStreamMetadata, LocalAudioSearchResult } from '../shared/models';
+import type { AudioStreamMetadata, LocalAudioSearchResult, Playlist } from '../shared/models';
 import type {
   ElectronAPI,
+  PlaylistImportResult,
   TrackResolverDebugLog,
   TrackSearchResult,
   YouTubeMusicCandidatesResult,
@@ -32,6 +33,18 @@ const api: ElectronAPI = {
    */
   resolveTrack: (url: string, options) => {
     return ipcRenderer.invoke('resolve-track', url, options) as Promise<TrackSearchResult>;
+  },
+
+  importPlaylist: (url: string) => {
+    return ipcRenderer.invoke('import-playlist', url) as Promise<PlaylistImportResult>;
+  },
+
+  loadPlaylists: () => {
+    return ipcRenderer.invoke('load-playlists') as Promise<unknown[] | null>;
+  },
+
+  savePlaylists: (playlists: Playlist[]) => {
+    return ipcRenderer.invoke('save-playlists', playlists) as Promise<void>;
   },
 
   resolveHtmlVideoSource: (track) => {

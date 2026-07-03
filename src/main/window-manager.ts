@@ -17,6 +17,8 @@ import {
 import * as path from 'path';
 import { LayoutManager } from './layout-manager';
 import { resolveHtmlVideoSource, resolveTrack } from './track-resolver';
+import { importPlaylist } from './playlist-importer';
+import { loadPlaylists, savePlaylists } from './playlist-storage';
 import { appendCrashLog } from './crash-handler';
 import { SpotifyAuthManager } from './spotify-auth';
 import { MusicServiceType } from '../shared/models';
@@ -201,6 +203,22 @@ export class WindowManager {
       });
     });
 
+    ipcMain.handle('import-playlist', async (_, url: unknown) => {
+      if (typeof url !== 'string') {
+        throw new TypeError('url must be a string');
+      }
+
+      return importPlaylist(url.slice(0, 2_000), {
+        getSpotifyAccessToken: () => this.spotifyAuthManager.getValidAccessToken(),
+      });
+    });
+
+    ipcMain.handle('load-playlists', async () => loadPlaylists());
+
+    ipcMain.handle('save-playlists', async (_, playlists: unknown) => {
+      await savePlaylists(playlists);
+    });
+
     ipcMain.handle('resolve-html-video-source', async (_, track: unknown) => {
       if (!track || typeof track !== 'object') {
         throw new TypeError('track must be an object');
@@ -326,6 +344,9 @@ export class WindowManager {
     ipcMain.removeHandler('open-external');
     ipcMain.removeHandler('set-sidebar-visibility');
     ipcMain.removeHandler('resolve-track');
+    ipcMain.removeHandler('import-playlist');
+    ipcMain.removeHandler('load-playlists');
+    ipcMain.removeHandler('save-playlists');
     ipcMain.removeHandler('resolve-html-video-source');
     ipcMain.removeHandler('report-crash');
     ipcMain.removeHandler('show-error-dialog');

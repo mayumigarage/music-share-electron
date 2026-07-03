@@ -12,7 +12,7 @@
  * - contextIsolation: true
  */
 
-import type { AudioStreamMetadata, LocalAudioSearchResult, MusicServiceType, Track } from './models';
+import type { AudioStreamMetadata, LocalAudioSearchResult, MusicServiceType, Playlist, Track } from './models';
 
 // ============================================================================
 // Player Message Types
@@ -91,6 +91,25 @@ export interface YouTubeMusicCandidatesResult {
   youtubeMusic: TrackSearchCandidate[];
 }
 
+/** Supported external playlist sources for one-click import. */
+export type PlaylistImportSource = MusicServiceType.YouTube | MusicServiceType.Spotify;
+
+/** A batch of playable tracks imported from an external playlist URL. */
+export interface PlaylistImportResult {
+  source: PlaylistImportSource;
+  sourceUrl: string;
+  title: string;
+  tracks: ResolvedTrack[];
+  /** Number reported by the provider when available. */
+  totalCount: number;
+  /** Entries skipped because they were unavailable, local-only, or malformed. */
+  skippedCount: number;
+  /** Tracks imported without a resolved YouTube playback candidate. */
+  unresolvedCount: number;
+  /** True when the source had more items than MusicShare imports in one batch. */
+  isPartial: boolean;
+}
+
 /**
  * Diagnostic information emitted while resolving an external track URL.
  * This is intentionally limited to metadata and yt-dlp arguments; no tokens
@@ -138,6 +157,23 @@ export interface ElectronAPI {
    * @returns The resolved track metadata or an error
    */
   resolveTrack: (url: string, options?: TrackResolveOptions) => Promise<TrackSearchResult>;
+
+  /**
+   * Import tracks from a Spotify or YouTube playlist URL.
+   * External API access runs in the main process; the renderer only receives
+   * normalized track metadata.
+   */
+  importPlaylist: (url: string) => Promise<PlaylistImportResult>;
+
+  /**
+   * Load local, per-user playlists from Electron's userData directory.
+   */
+  loadPlaylists: () => Promise<unknown[] | null>;
+
+  /**
+   * Persist local, per-user playlists to Electron's userData directory.
+   */
+  savePlaylists: (playlists: Playlist[]) => Promise<void>;
 
   /**
    * Resolve a queued track to a direct media URL suitable for HTMLVideoElement.

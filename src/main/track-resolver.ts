@@ -32,7 +32,7 @@ const execFileAsync = promisify(execFile);
  * bundled Unix binary when present, then fall back to common install paths and
  * finally PATH.
  */
-function getYtDlpCommand(): string {
+export function getYtDlpCommand(): string {
   if (!app.isPackaged) return 'yt-dlp';
 
   if (process.platform === 'win32') {
@@ -64,7 +64,7 @@ type YtDlpError = Error & {
   stderr?: string;
 };
 
-type YtDlpExecOptions = {
+export type YtDlpExecOptions = {
   timeout: number;
   windowsHide: boolean;
   maxBuffer: number;
@@ -374,7 +374,7 @@ function formatYtDlpFailureForTerminal(context: string, command: string, args: s
   ].join('\n');
 }
 
-async function execYtDlp(
+export async function execYtDlp(
   args: string[],
   options: YtDlpExecOptions,
   context: string,
@@ -709,6 +709,24 @@ async function findYouTubeCandidate(
     console.warn('[TrackResolver] yt-dlp lookup failed:', ytDlpError.message || error);
     return [{ track: null, error: '検索できませんでした。yt-dlp の導入とネットワークを確認してください。' }];
   }
+}
+
+export async function resolveBestYouTubeCandidateForMetadata(
+  sourceUrl: string,
+  title: string,
+  artist: string,
+  sourceService: MusicServiceType,
+  expectedDuration: number | null,
+): Promise<ResolvedTrack | null> {
+  const candidates = await findYouTubeCandidate(
+    sourceUrl,
+    title,
+    artist,
+    'youtube',
+    sourceService,
+    expectedDuration,
+  );
+  return candidates.find((candidate) => candidate.track !== null)?.track ?? null;
 }
 
 // ---------------------------------------------------------------------------

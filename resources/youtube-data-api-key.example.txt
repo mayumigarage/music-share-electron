@@ -1,0 +1,6 @@
+Put your YouTube Data API v3 key in:
+
+resources/youtube-data-api-key.txt
+
+That file is intentionally ignored by git and is copied into packaged builds
+as youtube-data-api-key.txt.

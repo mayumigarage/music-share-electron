@@ -6,6 +6,11 @@ import type { PlayerMessage } from '../../shared/preload-api.js';
 
 type MessageListener = (message: PlayerMessage) => void;
 
+type PreloadEntry = {
+  url: string;
+  video: HTMLVideoElement;
+};
+
 const VIDEO_DIAGNOSTIC_EVENTS = [
   'loadstart',
   'loadedmetadata',
@@ -28,6 +33,7 @@ export class DomVideoPlayer {
   private reportInterval: ReturnType<typeof setInterval> | null = null;
   private loadSequence = 0;
   private suppressMediaEvents = false;
+  private preloadEntries = new Map<string, PreloadEntry>();
 
   constructor() {
     const existing = document.getElementById('html-video-player');
@@ -38,7 +44,7 @@ export class DomVideoPlayer {
       this.video.id = 'html-video-player';
       this.video.controls = true;
       this.video.playsInline = true;
-      this.video.preload = 'metadata';
+      this.video.preload = 'auto';
       // Diagnostic note: if playback fails only for googlevideo.com URLs,
       // test with crossOrigin unset. crossOrigin="anonymous" forces a CORS
       // fetch path and can surface as MEDIA_ERR_SRC_NOT_SUPPORTED.
@@ -65,6 +71,38 @@ export class DomVideoPlayer {
 
   prepareForLoad(): void {
     this.resetMediaElement({ clearSource: true });
+  }
+
+  preloadTracks(tracks: Track[]): void {
+    const nextIds = new Set(tracks.map((track) => track.id));
+    for (const trackId of this.preloadEntries.keys()) {
+      if (!nextIds.has(trackId)) {
+        this.disposePreloadEntry(trackId);
+      }
+    }
+
+    for (const track of tracks) {
+      if (!track.url) continue;
+
+      const existing = this.preloadEntries.get(track.id);
+      if (existing?.url === track.url) continue;
+      if (existing) this.disposePreloadEntry(track.id);
+
+      const video = document.createElement('video');
+      video.preload = 'auto';
+      video.playsInline = true;
+      video.style.display = 'none';
+      video.src = track.url;
+
+      video.addEventListener('error', () => {
+        console.warn(`[DomVideoPlayer] Preload failed for ${track.id}:`, this.getMediaErrorMessage(video));
+        this.disposePreloadEntry(track.id);
+      }, { once: true });
+
+      document.getElementById('player-container')?.appendChild(video);
+      this.preloadEntries.set(track.id, { url: track.url, video });
+      video.load();
+    }
   }
 
   loadTrack(track: Track): Promise<void> {
@@ -113,6 +151,10 @@ export class DomVideoPlayer {
         urlLength: track.url.length,
         video: this.getVideoDiagnostics(),
       }, null, 2)}`);
+      const preloaded = this.preloadEntries.get(track.id);
+      if (preloaded?.url === track.url) {
+        console.log(`[DomVideoPlayer] Using preloaded media source for ${track.id}`);
+      }
       this.video.src = track.url;
       console.log(`[DomVideoPlayer][after-video-src] ${JSON.stringify({
         trackId: track.id,
@@ -129,6 +171,10 @@ export class DomVideoPlayer {
       this.video.currentTime = 0;
     }
     void this.video.play().catch((error: unknown) => {
+      if (this.isInterruptedPlayRequest(error)) {
+        console.debug('[DomVideoPlayer] Ignored interrupted play() request:', this.getErrorMessage(error));
+        return;
+      }
       this.emit({ type: 'error', error: error instanceof Error ? error.message : String(error) });
     });
   }
@@ -266,6 +312,30 @@ export class DomVideoPlayer {
         this.suppressMediaEvents = false;
       }, 0);
     }
+  }
+
+  private disposePreloadEntry(trackId: string): void {
+    const entry = this.preloadEntries.get(trackId);
+    if (!entry) return;
+    entry.video.pause();
+    entry.video.removeAttribute('src');
+    entry.video.load();
+    entry.video.remove();
+    this.preloadEntries.delete(trackId);
+  }
+
+  private isInterruptedPlayRequest(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return error.name === 'AbortError' && /play\(\) request was interrupted/i.test(error.message);
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private getMediaErrorMessage(video: HTMLVideoElement): string {
+    const error = video.error;
+    return error ? `HTML video error: ${error.code}` : 'HTML video error';
   }
 
   private emitState(): void {
