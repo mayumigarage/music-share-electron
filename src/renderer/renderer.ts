@@ -9,6 +9,7 @@ import { SyncEngine } from './sync/sync-engine.js';
 import { PlayerProxy } from './sync/player-proxy.js';
 import { initializeSidebarResizers } from './ui/sidebar-resizer.js';
 import { initializeStaticIcons } from './ui/icons.js';
+import { initializeReactBitsEffects } from './ui/react-bits-effects.js';
 import {
   getAudioOnlyMetadata,
   pauseAudioOnlyMode,
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   try {
     initializeStaticIcons();
     initializeSidebarResizers();
+    initializeReactBitsEffects();
     const wsClient = new WebSocketClient();
     const playerProxy = new PlayerProxy();
     const syncEngine = new SyncEngine(wsClient, playerProxy);
