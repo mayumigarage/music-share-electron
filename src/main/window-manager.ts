@@ -26,7 +26,7 @@ import type { TrackResolverDebugLog } from '../shared/preload-api';
 
 const WINDOW_WIDTH = 1200;
 const WINDOW_HEIGHT = 700;
-const BACKGROUND_COLOR = '#121212';
+const BACKGROUND_COLOR = '#0d0913';
 
 export class WindowManager {
   private win!: BaseWindow;
@@ -56,6 +56,10 @@ export class WindowManager {
       height: WINDOW_HEIGHT,
       title: 'MusicShare',
       backgroundColor: BACKGROUND_COLOR,
+      titleBarOverlay: {
+        color: BACKGROUND_COLOR,
+        symbolColor: '#f4ecff',
+      },
       minWidth: 900,
       minHeight: 500,
       show: false, // Show after layout is ready to avoid visual flicker

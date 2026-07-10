@@ -11,6 +11,11 @@ type PreloadEntry = {
   video: HTMLVideoElement;
 };
 
+type DomVideoPlayerOptions = {
+  elementId?: string;
+  containerId?: string;
+};
+
 const VIDEO_DIAGNOSTIC_EVENTS = [
   'loadstart',
   'loadedmetadata',
@@ -34,21 +39,26 @@ export class DomVideoPlayer {
   private loadSequence = 0;
   private suppressMediaEvents = false;
   private preloadEntries = new Map<string, PreloadEntry>();
+  private elementId: string;
+  private containerId: string;
 
-  constructor() {
-    const existing = document.getElementById('html-video-player');
+  constructor(options: DomVideoPlayerOptions = {}) {
+    this.elementId = options.elementId ?? 'html-video-player';
+    this.containerId = options.containerId ?? 'player-container';
+
+    const existing = document.getElementById(this.elementId);
     if (existing instanceof HTMLVideoElement) {
       this.video = existing;
     } else {
       this.video = document.createElement('video');
-      this.video.id = 'html-video-player';
+      this.video.id = this.elementId;
       this.video.controls = true;
       this.video.playsInline = true;
       this.video.preload = 'auto';
       // Diagnostic note: if playback fails only for googlevideo.com URLs,
       // test with crossOrigin unset. crossOrigin="anonymous" forces a CORS
       // fetch path and can surface as MEDIA_ERR_SRC_NOT_SUPPORTED.
-      document.getElementById('player-container')?.appendChild(this.video);
+      document.getElementById(this.containerId)?.appendChild(this.video);
     }
 
     this.bindVideoEvents();
@@ -99,7 +109,7 @@ export class DomVideoPlayer {
         this.disposePreloadEntry(track.id);
       }, { once: true });
 
-      document.getElementById('player-container')?.appendChild(video);
+      document.getElementById(this.containerId)?.appendChild(video);
       this.preloadEntries.set(track.id, { url: track.url, video });
       video.load();
     }

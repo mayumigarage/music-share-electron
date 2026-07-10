@@ -31,6 +31,14 @@ export class PlayerControl {
   private timeTotal = document.getElementById('time-total') as HTMLElement;
   private volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
   private muteBtn = document.getElementById('btn-mute') as HTMLButtonElement;
+  private miniPlayer = document.getElementById('playlist-mini-player') as HTMLElement | null;
+  private miniThumb = document.getElementById('playlist-mini-thumb') as HTMLImageElement | null;
+  private miniTitle = document.getElementById('playlist-mini-title') as HTMLElement | null;
+  private miniArtist = document.getElementById('playlist-mini-artist') as HTMLElement | null;
+  private miniPlayBtn = document.getElementById('btn-playlist-mini-play') as HTMLButtonElement | null;
+  private miniPrevBtn = document.getElementById('btn-playlist-mini-prev') as HTMLButtonElement | null;
+  private miniNextBtn = document.getElementById('btn-playlist-mini-next') as HTMLButtonElement | null;
+  private miniCloseBtn = document.getElementById('btn-playlist-mini-close') as HTMLButtonElement | null;
 
   private volumeBeforeMute = 80;
 
@@ -40,12 +48,19 @@ export class PlayerControl {
     private playerProxy: PlayerProxy,
     private wsClient: WebSocketClient,
     private syncEngine: SyncEngine,
+    private localPlayerProxy: PlayerProxy = playerProxy,
   ) {}
 
   init(): void {
     this.playBtn.addEventListener('click', () => this.togglePlayPause());
     this.prevBtn.addEventListener('click', () => this.prev());
     this.nextBtn.addEventListener('click', () => this.next());
+    this.miniPlayBtn?.addEventListener('click', () => this.toggleLocalPlayPause());
+    this.miniPrevBtn?.addEventListener('click', () => this.prevLocal());
+    this.miniNextBtn?.addEventListener('click', () => {
+      void this.playNextLocalTrack();
+    });
+    this.miniCloseBtn?.addEventListener('click', () => this.stopLocalPlayback());
 
     this.seekBar.addEventListener('input', () => {
       this.isSeeking = true;
@@ -56,7 +71,7 @@ export class PlayerControl {
       this.isSeeking = false;
       const pos = Number(this.seekBar.value);
       if (this.isLocalPlayback && this.localState) {
-        this.playerProxy.seek(pos);
+        this.localPlayerProxy.seek(pos);
         this.localState.positionSeconds = pos;
         this.localState.updatedAt = Date.now();
         this.publishLocalState();
@@ -79,7 +94,7 @@ export class PlayerControl {
 
     this.volumeSlider.addEventListener('input', () => {
       const vol = Number(this.volumeSlider.value);
-      this.playerProxy.setVolume(vol / 100);
+      this.getActiveControlPlayer().setVolume(vol / 100);
       setIconButton(this.muteBtn, vol === 0 ? 'speaker-x-mark' : 'speaker-wave', vol === 0 ? 'ミュート解除' : 'ミュート', { size: 20 });
     });
 
@@ -88,31 +103,34 @@ export class PlayerControl {
       if (current > 0) {
         this.volumeBeforeMute = current;
         this.volumeSlider.value = '0';
-        this.playerProxy.setVolume(0);
+        this.getActiveControlPlayer().setVolume(0);
         setIconButton(this.muteBtn, 'speaker-x-mark', 'ミュート解除', { size: 20 });
       } else {
         this.volumeSlider.value = String(this.volumeBeforeMute);
-        this.playerProxy.setVolume(this.volumeBeforeMute / 100);
+        this.getActiveControlPlayer().setVolume(this.volumeBeforeMute / 100);
         setIconButton(this.muteBtn, 'speaker-wave', 'ミュート', { size: 20 });
       }
     });
 
-    this.playerProxy.onMessage((message) => this.handleLocalPlayerMessage(message));
+    this.localPlayerProxy.onMessage((message) => this.handleLocalPlayerMessage(message));
   }
 
   setRoom(room: Room | null, user: User | null): void {
-    if (room && this.isLocalPlayback) {
-      this.stopLocalPlayback();
-    }
     this.room = room;
     this.currentUser = user;
     this.isHost = !!user && !!room && room.hostId === user.id;
 
-    if (room) {
+    if (this.isLocalPlayback && this.localState) {
+      this.publishLocalState();
+    } else if (room) {
       this.updateState(room.playerState);
     } else {
       this.resetUI();
     }
+  }
+
+  isLocalPlaybackActive(): boolean {
+    return this.isLocalPlayback;
   }
 
   updateState(state: PlayerState): void {
@@ -133,7 +151,7 @@ export class PlayerControl {
   }
 
   togglePlayPause(): void {
-    if (this.isLocalPlayback) {
+    if (this.isLocalPlayback && !this.room) {
       this.toggleLocalPlayPause();
       return;
     }
@@ -162,20 +180,24 @@ export class PlayerControl {
   }
 
   prev(): void {
-    if (!this.isLocalPlayback) return;
+    if (!this.isLocalPlayback || this.room) return;
+    this.prevLocal();
+  }
+
+  private prevLocal(): void {
     if (this.localTrackIndex > 0) {
       void this.startLocalTrack(this.localTrackIndex - 1);
       return;
     }
     if (this.localState) {
-      this.playerProxy.seek(0);
+      this.localPlayerProxy.seek(0);
       this.localState.positionSeconds = 0;
       this.publishLocalState();
     }
   }
 
   next(): void {
-    if (this.isLocalPlayback) {
+    if (this.isLocalPlayback && !this.room) {
       void this.playNextLocalTrack();
       return;
     }
@@ -202,12 +224,12 @@ export class PlayerControl {
 
   async playLocalPlaylist(tracks: Track[], startIndex = 0, playerType = this.localPlaylistPlayerType): Promise<void> {
     if (tracks.length === 0) return;
-    if (this.room) return;
 
     this.localPlaylistPlayerType = playerType;
     this.localTracks = tracks.map((track) => ({ ...track }));
     this.localTrackIndex = Math.min(Math.max(startIndex, 0), this.localTracks.length - 1);
     this.isLocalPlayback = true;
+    this.setLocalPlayerVisible(true);
     await this.startLocalTrack(this.localTrackIndex);
   }
 
@@ -249,18 +271,19 @@ export class PlayerControl {
     }
 
     this.localTrackIndex = index;
-    this.playerProxy.setPlayerType(this.getLocalPlayerType(track));
+    this.localPlayerProxy.setPlayerType(this.getLocalPlayerType(track));
+    this.localPlayerProxy.setVolume(Number(this.volumeSlider.value) / 100);
 
     try {
-      await this.playerProxy.loadTrack(track);
+      await this.localPlayerProxy.loadTrack(track);
     } catch (error) {
       console.error('[PlayerControl] Failed to load local playlist track:', error);
       await this.playNextLocalTrack();
       return;
     }
 
-    this.playerProxy.resume();
-    this.playerProxy.preloadUpcomingTracks(this.localTracks, track.id);
+    this.localPlayerProxy.resume();
+    this.localPlayerProxy.preloadUpcomingTracks(this.localTracks, track.id);
     this.localState = {
       isPlaying: true,
       positionSeconds: 0,
@@ -278,9 +301,9 @@ export class PlayerControl {
 
     const shouldPlay = !this.localState.isPlaying;
     if (shouldPlay) {
-      this.playerProxy.resume();
+      this.localPlayerProxy.resume();
     } else {
-      this.playerProxy.pause();
+      this.localPlayerProxy.pause();
     }
     this.localState.isPlaying = shouldPlay;
     this.localState.updatedAt = Date.now();
@@ -297,7 +320,8 @@ export class PlayerControl {
   }
 
   private stopLocalPlayback(): void {
-    this.playerProxy.stop();
+    this.localPlayerProxy.stop();
+    this.localPlayerProxy.preloadUpcomingTracks([], null);
     this.isLocalPlayback = false;
     this.localTracks = [];
     this.localTrackIndex = -1;
@@ -309,6 +333,10 @@ export class PlayerControl {
     };
     this.publishLocalState();
     this.localState = null;
+    this.setLocalPlayerVisible(false);
+    if (this.room) {
+      this.updateState(this.room.playerState);
+    }
   }
 
   private handleLocalPlayerMessage(message: PlayerMessage): void {
@@ -364,8 +392,52 @@ export class PlayerControl {
 
   private publishLocalState(): void {
     if (!this.localState) return;
-    this.updateState(this.localState);
+    this.updateMiniPlayer(this.localState);
+    if (!this.room) {
+      this.updateState(this.localState);
+    }
     this.onLocalPlayerStateUpdated?.(this.localState);
+  }
+
+  private getActiveControlPlayer(): PlayerProxy {
+    return this.isLocalPlayback && !this.room ? this.localPlayerProxy : this.playerProxy;
+  }
+
+  private setLocalPlayerVisible(isVisible: boolean): void {
+    if (this.localPlayerProxy === this.playerProxy) return;
+    this.localPlayerProxy.setVisible(isVisible);
+    this.miniPlayer?.classList.toggle('open', isVisible);
+    if (!this.room) {
+      this.playerProxy.setVisible(!isVisible);
+    } else {
+      this.playerProxy.setVisible(true);
+    }
+  }
+
+  private updateMiniPlayer(state: PlayerState): void {
+    const track = state.currentTrack;
+    if (!track) {
+      this.miniPlayer?.classList.remove('open');
+      if (this.miniPlayBtn) {
+        setIconButton(this.miniPlayBtn, 'play-solid', '再生', { size: 20 });
+      }
+      return;
+    }
+
+    this.miniPlayer?.classList.add('open');
+    if (this.miniThumb) {
+      if (track.thumbnailUrl) {
+        this.miniThumb.src = track.thumbnailUrl;
+        this.miniThumb.style.display = 'block';
+      } else {
+        this.miniThumb.style.display = 'none';
+      }
+    }
+    if (this.miniTitle) this.miniTitle.textContent = track.title;
+    if (this.miniArtist) this.miniArtist.textContent = track.artist;
+    if (this.miniPlayBtn) {
+      setIconButton(this.miniPlayBtn, state.isPlaying ? 'pause-solid' : 'play-solid', state.isPlaying ? '一時停止' : '再生', { size: 20 });
+    }
   }
 
   private getLocalPlayerType(track: Track): RoomPlayerType {

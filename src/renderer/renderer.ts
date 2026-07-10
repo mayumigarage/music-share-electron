@@ -50,10 +50,20 @@ async function main(): Promise<void> {
     initializeSidebarResizers();
     initializeReactBitsEffects();
     const wsClient = new WebSocketClient();
-    const playerProxy = new PlayerProxy();
+    const playerProxy = new PlayerProxy({
+      youtubeElementId: 'youtube-player',
+      htmlVideoElementId: 'html-video-player',
+      containerId: 'player-container',
+    });
+    const playlistPlayerProxy = new PlayerProxy({
+      youtubeElementId: 'playlist-youtube-player',
+      htmlVideoElementId: 'playlist-html-video-player',
+      containerId: 'playlist-mini-player-stage',
+      visible: false,
+    });
     const syncEngine = new SyncEngine(wsClient, playerProxy);
 
-    app = new AppUI(wsClient, syncEngine, playerProxy);
+    app = new AppUI(wsClient, syncEngine, playerProxy, playlistPlayerProxy);
     await app.init();
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

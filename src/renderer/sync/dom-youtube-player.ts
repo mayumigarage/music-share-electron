@@ -18,6 +18,8 @@ interface YouTubePlayer {
   getPlayerState(): number;
 }
 
+let youtubeApiReadyPromise: Promise<void> | null = null;
+
 declare global {
   interface Window {
     YT?: {
@@ -28,6 +30,34 @@ declare global {
   }
 }
 
+function loadYouTubeIframeApi(): Promise<void> {
+  if (window.YT?.Player) {
+    return Promise.resolve();
+  }
+
+  if (youtubeApiReadyPromise) {
+    return youtubeApiReadyPromise;
+  }
+
+  youtubeApiReadyPromise = new Promise((resolve) => {
+    const previousCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previousCallback?.();
+      resolve();
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+    if (existingScript) return;
+
+    const script = document.createElement('script');
+    script.src = 'https://www.youtube.com/iframe_api';
+    script.async = true;
+    document.head.appendChild(script);
+  });
+
+  return youtubeApiReadyPromise;
+}
+
 export class DomYouTubePlayer {
   private player: YouTubePlayer | null = null;
   private ready = false;
@@ -35,12 +65,8 @@ export class DomYouTubePlayer {
   private listeners = new Set<MessageListener>();
   private reportInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
-    window.onYouTubeIframeAPIReady = () => this.createPlayer();
-    const script = document.createElement('script');
-    script.src = 'https://www.youtube.com/iframe_api';
-    script.async = true;
-    document.head.appendChild(script);
+  constructor(private elementId = 'youtube-player') {
+    void loadYouTubeIframeApi().then(() => this.createPlayer());
   }
 
   onMessage(listener: MessageListener): () => void {
@@ -77,10 +103,14 @@ export class DomYouTubePlayer {
   stop(): void { this.player?.stopVideo(); this.emit({ type: 'stopped' }); }
   seek(seconds: number): void { this.player?.seekTo(seconds, true); }
   setVolume(volume: number): void { this.player?.setVolume(Math.round(volume * 100)); }
+  setVisible(isVisible: boolean): void {
+    document.getElementById(this.elementId)?.style.setProperty('display', isVisible ? 'block' : 'none');
+  }
 
   private createPlayer(): void {
+    if (this.player) return;
     if (!window.YT) return;
-    this.player = new window.YT.Player('youtube-player', {
+    this.player = new window.YT.Player(this.elementId, {
       width: '100%', height: '100%',
       playerVars: {
         autoplay: 1,

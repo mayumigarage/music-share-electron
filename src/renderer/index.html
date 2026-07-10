@@ -1232,6 +1232,7 @@
     #player-container {
       flex: 1;
       min-height: 0;
+      position: relative;
       border: 1px solid var(--border-soft);
       border-radius: var(--radius-track);
       background: var(--surface-idle-strong);
@@ -1239,7 +1240,14 @@
       overflow: hidden;
     }
 
-    #youtube-player, #youtube-player iframe, #html-video-player {
+    #youtube-player,
+    #youtube-player iframe,
+    #html-video-player,
+    #playlist-youtube-player,
+    #playlist-youtube-player iframe,
+    #playlist-html-video-player {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       border: 0;
@@ -1250,10 +1258,88 @@
       padding: 16px;
     }
 
-    #html-video-player {
+    #html-video-player,
+    #playlist-html-video-player {
       display: none;
       object-fit: contain;
       background: #000;
+    }
+
+    #playlist-mini-player {
+      position: fixed;
+      right: 18px;
+      bottom: calc(var(--control-height) + 18px);
+      width: min(360px, calc(100vw - 36px));
+      height: 230px;
+      z-index: 160;
+      display: none;
+      grid-template-rows: 42px 1fr 52px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-track);
+      background: rgba(17, 12, 24, 0.96);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
+      overflow: hidden;
+    }
+
+    #playlist-mini-player.open {
+      display: grid;
+    }
+
+    .mini-player-header {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .mini-player-thumb {
+      width: 26px;
+      height: 26px;
+      flex: 0 0 26px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: var(--surface-idle-strong);
+    }
+
+    .mini-player-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .mini-player-title,
+    .mini-player-artist {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mini-player-title {
+      font-size: 12px;
+      font-weight: 750;
+      color: var(--text-primary);
+    }
+
+    .mini-player-artist {
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    #playlist-mini-player-stage {
+      position: relative;
+      min-height: 0;
+      background: #000;
+    }
+
+    .mini-player-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-top: 1px solid var(--border-soft);
     }
 
     /* ── Bottom Control ── */
@@ -2343,6 +2429,25 @@
       <div id="player-container"><div id="youtube-player"></div></div>
     </aside>
   </div>
+
+  <section id="playlist-mini-player" aria-label="プレイリスト ミニプレイヤー">
+    <div class="mini-player-header">
+      <img class="mini-player-thumb" id="playlist-mini-thumb" src="" alt="" style="display:none;" />
+      <div class="mini-player-info">
+        <div class="mini-player-title" id="playlist-mini-title">プレイリスト再生</div>
+        <div class="mini-player-artist" id="playlist-mini-artist">-</div>
+      </div>
+      <button class="btn-icon" id="btn-playlist-mini-close" type="button" title="閉じる" aria-label="閉じる"><span data-hero-icon="x-mark"></span></button>
+    </div>
+    <div id="playlist-mini-player-stage">
+      <div id="playlist-youtube-player"></div>
+    </div>
+    <div class="mini-player-controls">
+      <button class="control-btn" id="btn-playlist-mini-prev" type="button" title="前へ" aria-label="前へ"><span data-hero-icon="backward"></span></button>
+      <button class="control-btn play" id="btn-playlist-mini-play" type="button" title="再生/一時停止" aria-label="再生"><span data-hero-icon="play-solid"></span></button>
+      <button class="control-btn" id="btn-playlist-mini-next" type="button" title="次へ" aria-label="次へ"><span data-hero-icon="forward"></span></button>
+    </div>
+  </section>
 
   <!-- Bottom Control -->
   <footer id="bottom-control">

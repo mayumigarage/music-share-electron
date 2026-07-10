@@ -14,19 +14,34 @@ export class StalePlayerLoadError extends Error {
   }
 }
 
+type PlayerProxyOptions = {
+  youtubeElementId?: string;
+  htmlVideoElementId?: string;
+  containerId?: string;
+  visible?: boolean;
+};
+
 export class PlayerProxy {
   private static readonly PRELOAD_AHEAD_COUNT = 3;
 
-  private youtubePlayer = new DomYouTubePlayer();
-  private videoPlayer = new DomVideoPlayer();
+  private youtubePlayer: DomYouTubePlayer;
+  private videoPlayer: DomVideoPlayer;
   private playerType = RoomPlayerType.YouTube;
+  private isVisible: boolean;
   private listeners = new Set<(message: PlayerMessage) => void>();
   private htmlVideoLoadRequestId = 0;
   private htmlVideoPreloadRequestId = 0;
   private htmlVideoSourceCache = new Map<string, string>();
   private htmlVideoPreloadedTracks = new Map<string, Track>();
 
-  constructor() {
+  constructor(options: PlayerProxyOptions = {}) {
+    this.isVisible = options.visible ?? true;
+    this.youtubePlayer = new DomYouTubePlayer(options.youtubeElementId);
+    this.videoPlayer = new DomVideoPlayer({
+      elementId: options.htmlVideoElementId,
+      containerId: options.containerId,
+    });
+
     this.youtubePlayer.onMessage((message) => {
       if (this.playerType === RoomPlayerType.YouTube) this.emit(message);
     });
@@ -42,13 +57,20 @@ export class PlayerProxy {
     }
     this.playerType = playerType;
     const isVideo = playerType === RoomPlayerType.HtmlVideo;
-    document.getElementById('youtube-player')?.style.setProperty('display', isVideo ? 'none' : 'block');
-    this.videoPlayer.setVisible(isVideo);
+    this.youtubePlayer.setVisible(this.isVisible && !isVideo);
+    this.videoPlayer.setVisible(this.isVisible && isVideo);
     if (!isVideo) {
       this.htmlVideoSourceCache.clear();
       this.htmlVideoPreloadedTracks.clear();
       this.videoPlayer.preloadTracks([]);
     }
+  }
+
+  setVisible(isVisible: boolean): void {
+    this.isVisible = isVisible;
+    const isVideo = this.playerType === RoomPlayerType.HtmlVideo;
+    this.youtubePlayer.setVisible(isVisible && !isVideo);
+    this.videoPlayer.setVisible(isVisible && isVideo);
   }
 
   async loadTrack(track: Track): Promise<void> {

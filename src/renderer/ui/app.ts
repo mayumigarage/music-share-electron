@@ -110,6 +110,7 @@ export class AppUI {
     private wsClient: WebSocketClient,
     private syncEngine: SyncEngine,
     private playerProxy: PlayerProxy,
+    playlistPlayerProxy: PlayerProxy = playerProxy,
   ) {
     this.playlistPanel = new PlaylistPanel(
       this.handleCreatePlaylist.bind(this),
@@ -124,7 +125,7 @@ export class AppUI {
     );
     this.historyPanel = new HistoryPanel();
     this.membersPanel = new MembersPanel();
-    this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine);
+    this.playerControl = new PlayerControl(playerProxy, wsClient, syncEngine, playlistPlayerProxy);
     this.playerControl.onLocalPlayerStateUpdated = (state) => this.handleLocalPlayerStateUpdated(state);
     this.audioSearchPanel = new AudioSearchPanel(this.showToast.bind(this));
   }
@@ -748,10 +749,6 @@ export class AppUI {
       this.showToast('プレイリストに曲がありません', 'info');
       return;
     }
-    if (this.currentRoom) {
-      this.showToast('ルーム参加中は共有キューで再生してください', 'info');
-      return;
-    }
 
     this.playerControl.setLocalPlaylistPlayerType(this.localPlaylistPlayerType);
     await this.playerControl.playLocalPlaylist(playlist.tracks, startIndex, this.localPlaylistPlayerType);
@@ -1225,16 +1222,27 @@ export class AppUI {
   }
 
   private handlePlayerStateUpdated(state: PlayerState): void {
-    this.localPlayingTrackId = null;
     this.queuePanel.setPlayerState(state);
+    if (this.playerControl.isLocalPlaybackActive() && !this.currentRoom) {
+      return;
+    }
+    if (!this.playerControl.isLocalPlaybackActive()) {
+      this.localPlayingTrackId = null;
+      this.setPlaylistPlayingTrack(null);
+    }
     this.playerControl.updateState(state);
     this.updateNowPlaying(state.currentTrack, state.isPlaying);
   }
 
   private handleLocalPlayerStateUpdated(state: PlayerState): void {
     this.localPlayingTrackId = state.currentTrack?.id ?? null;
-    this.updateNowPlaying(state.currentTrack, state.isPlaying);
     this.setPlaylistPlayingTrack(this.localPlayingTrackId);
+    if (!state.currentTrack && this.currentRoom) {
+      this.handlePlayerStateUpdated(this.currentRoom.playerState);
+      return;
+    }
+    if (this.currentRoom) return;
+    this.updateNowPlaying(state.currentTrack, state.isPlaying);
   }
 
   private async reconcilePlayerStateWithQueue(queue: Track[]): Promise<void> {
