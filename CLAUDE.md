@@ -1,131 +1,88 @@
-# MusicShare — Electron + TypeScript
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+MusicShare は、複数人で曲を同期再生する Electron + TypeScript アプリ（Socket.IO サーバー同梱）。コメント・UI 文言・README は日本語。
+
+## コマンド
+
+```bash
+npm start          # renderer を esbuild + main を tsc → Electron 起動（サーバーはビルドも起動もしない）
+npm run server     # Socket.IO サーバーをビルドして起動（ポート 5000、PORT で変更可）
+npm run build      # server / renderer / main を一括ビルド（dist/）
+npm run lint       # 型チェックのみ（tsc --noEmit を 3 つの tsconfig で実行。ESLint はない）
+npm test           # Jest（対象は src/server/__tests__ のみ）
+npx jest src/server/__tests__/handlers.test.ts    # 単一ファイル
+npx jest -t "テスト名の一部"                       # 単一テスト
+npm run dist:win   # Windows インストーラー（release/）
+npm run dist:mac   # macOS 用（macOS 上で実行すること）
+```
+
+- renderer は esbuild でバンドルするため型エラーがあっても `npm start` は通る。変更後は `npm run lint` を実行する。
+- 開発時の曲解決には PATH 上の `yt-dlp` が必要。パッケージ版 Windows は `tools/yt-dlp.exe` を同梱して使う（`getYtDlpCommand()`）。
+
+## 接続先サーバーに注意
+
+`npm run server` を起動しても、**アプリは既定でローカルではなく本番の Render（`https://music-share-electron-server.onrender.com`）に接続する**（README の localhost:5000 の記述とは異なる）。URL は 3 か所に別々にある。
+
+| 用途 | 場所 | 上書き手段 |
+|---|---|---|
+| Socket.IO | `src/renderer/sync/websocket-client.ts` | なし（直書き） |
+| audio-only API | `src/renderer/sync/audio-only-player.ts` | `globalThis.MUSICSHARE_AUDIO_API_BASE_URL` |
+| Spotify メタデータ | `src/main/track-resolver.ts` | 環境変数 `MUSIC_SHARE_SERVER_URL` |
+
+サーバー側の変更をアプリで確認するには、接続先を一時的にローカルへ向ける必要がある。
+
+## `src/` にコンパイル済みファイルを置かない
+
+renderer は `../../shared/models.js` のように `.js` 付きで import し、esbuild が `models.ts` に解決する。`src/shared/` に実体の `models.js` があると **esbuild も Jest もそちらを優先し**、`models.ts` の変更が型チェックを通ったまま実行時に反映されなくなる。出力先は `dist/` のみ。
 
 ## アーキテクチャ
 
-- **Main Process**: Electron (Node.js) + TypeScript
-  - ウィンドウ管理、システムトレイ
-  - `BaseWindow` + `WebContentsView` によるプレイヤー管理
-  - ファイル I/O、未処理例外の `crash.log` 書き込み
-  - URL メタデータ解決（CORS 回避のため Renderer ではなく Main で実行）
-- **Renderer Process**: TypeScript + 純正 HTML/CSS/JS（第一フェーズ）
-  - UI 表示、ユーザー入力、キュー/履歴描画
-  - WebSocket 経由でのサーバー通信
-  - WebRTC P2P 音声配信（HostBroadcast モード時）— `getDisplayMedia` でキャプチャ、`RTCPeerConnection` でゲストへ直接送信
-- **Preload Script**: TypeScript
-  - `contextBridge` による Main ↔ Renderer 間の安全な IPC
-- **Server**: Node.js + TypeScript + Socket.IO
-  - ルーム管理、メッセージ中継、キュー/履歴/再生状態のインメモリ保持
+### プロセス構成
 
-## ファイル構成
+- **Main（`src/main/`）**: `BaseWindow` に全面表示の `WebContentsView` を 1 枚だけ載せる。外部アクセスを伴う処理を担当する — URL 解決と yt-dlp 実行（`track-resolver.ts`）、プレイリスト取り込み（`playlist-importer.ts`）、プレイリスト保存、Spotify OAuth PKCE（`musicshare://` プロトコルでコールバック）。IPC ハンドラの大半は `window-manager.ts`、一部（audio 系のプレースホルダ実装）は `main.ts`。
+- **Renderer（`src/renderer/`）**: フレームワークなしの DOM。React は `ui/icons.ts` でアイコンを静的 HTML 文字列にする用途だけ。CSS はすべて `index.html` 内。`ui/app.ts` が全パネルを束ねる中心。
+- **Server（`src/server/`）**: `room-manager.ts`（インメモリの状態と規則）と `handlers.ts`（Socket.IO の入出力）に分離。`server.ts` は HTTP API（Spotify メタデータ、`/api/search-audio`、`/api/get-audio-stream`）も提供する。Spotify API には `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` が必要。
 
-```
-MusicShare/
-├── src/
-│   ├── main/
-│   │   ├── main.ts              # Electron エントリーポイント
-│   │   ├── window-manager.ts    # BaseWindow / WebContentsView / トレイ管理
-│   │   ├── layout-manager.ts    # ウィンドウリサイズ時の WebContentsView 再配置
-│   │   ├── player-bridge.ts     # WebContentsView 管理、プレイヤー通信、破棄処理
-│   │   ├── asset-path.ts        # 開発時/パッケージ化後の assets パス解決
-│   │   ├── track-resolver.ts    # URL → メタデータ解決（Node.js https/fetch）
-│   │   └── crash-handler.ts     # 未処理例外キャッチ、crash.log 書き込み
-│   ├── preload/
-│   │   └── preload.ts           # contextBridge IPC 定義
-│   ├── renderer/
-│   │   ├── index.html           # メイン UI（左パネル + 中央キュー/履歴 + 右メンバー/プレイヤー + 下部コントロール）
-│   │   ├── renderer.ts          # レンダラー側エントリーポイント
-│   │   ├── ui/
-│   │   │   ├── app.ts           # UI 初期化、イベントバインド
-│   │   │   ├── playlist-panel.ts# 左パネル：マイライブラリ/プレイリスト（第一フェーズはダミー表示）
-│   │   │   ├── queue-panel.ts   # 中央パネル：キュー描画、D&D、カスタムコンテキストメニュー
-│   │   │   ├── history-panel.ts # 中央パネル：履歴描画
-│   │   │   ├── members-panel.ts # 右パネル：メンバーリスト描画
-│   │   │   ├── player-control.ts# 下部コントロール：シークバー、音量
-│   │   │   └── room-modal.ts    # ルーム作成/参加モーダル
-│   │   └── sync/
-│   │       ├── sync-engine.ts   # ホスト/ゲスト同期ロジック
-│   │       ├── websocket-client.ts# Socket.IO クライアント
-│   │       ├── player-proxy.ts  # プレイヤー操作の抽象層（Renderer → Preload → Main → WebContentsView）
-│   │       ├── webrtc-manager.ts# WebRTC P2P 接続管理（RTCPeerConnection、MediaStream、ICE）
-│   │       └── signaling-client.ts# WebRTC シグナリング（SDP/ICE Candidate の Socket.IO 経由送受信）
-│   ├── shared/
-│   │   ├── models.ts            # Track, PlayerState, Room, User 等の型定義
-│   │   └── preload-api.ts       # contextBridge で公開する API の型定義
-│   └── server/
-│       ├── server.ts            # Socket.IO サーバー エントリーポイント
-│       ├── room-manager.ts      # ルーム CRUD、ホスト自動交代
-│       └── handlers.ts          # イベントハンドラ集
-├── assets/
-│   └── players/
-│       ├── YouTubePlayer.html   # YouTube IFrame Player API ラッパー
-│       ├── SpotifyPlayer.html   # Spotify Web Playback SDK ラッパー
-│       └── AppleMusicPlayer.html# Apple MusicKit JS v3 ラッパー
-├── package.json
-├── tsconfig.json
-├── tsconfig.main.json
-├── tsconfig.renderer.json
-├── tsconfig.server.json
-└── electron-builder.yml
-```
+renderer は `file://` ではなく、main が立てる `http://127.0.0.1:<port>` のローカルサーバー（`renderer-server.ts`）から読み込む。YouTube IFrame API が origin/referrer のない文書を拒否するため。
 
-## UI レイアウト（3ペイン構成版）
+Electron は Widevine 対応の castLabs フォーク。`widevine-ready` を待ってからウィンドウを作る（発火しない場合の `whenReady` フォールバックあり）。
 
-`WebContentsView` は DOM に含まれない独立レイヤーのため、以下の3ペイン分割レイアウトを採用する。
+### IPC を追加するとき
 
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│ 🎵 MusicShare  [ Room ID: 873-921 ]                              [⚙️]      │  <-- DOM（トップパネル）
-├──────────────────────┬────────────────────────────────────┬───────────────┤
-│ 📂 マイライブラリ     │  [ 🎵 キュー ]   [ 📜 履歴 ]        │ 👥 メンバー (4) │  <-- DOM（左パネル）
-│ ・🏠 ホーム          │ ────────────────────────────────── │ 👑 Host       │  <-- DOM（中央上部タブ）
-│ ・🔍 検索            │                                    │  └ 小田 (You) │  <-- DOM（右パネル上部）
-│                      │  🎵 再生待ちのキュー (3曲)         │               │
-│ 📁 プレイリスト      │  ┌──────────────────────────────┐  │ 🟢 Online     │
-│ ・お気に入り         │  │ 🟩 1. Next Title    [鈴木] [🗑️] │  │  ├ 鈴木       │
-│ ・作業用BGM          │  ├──────────────────────────────┤  │  └ 田中       │
-│ ・ドライブ用         │  │ 📄 2. Future Track  [田中] [🗑️] │  │               │
-│                      │  └──────────────────────────────┘  │ ⚪ Offline    │
-│ [➕ プレイリスト作成] │                                    │  └ 佐藤       │
-├──────────────────────┴────────────────────────────────────┴───────────────┤
-│                                                                         │
-│                    WebContentsView（プレイヤー）                          │  <-- 右パネル下部（独立ビュー）
-│                    YouTube / Spotify / AppleMusic                       │
-│                                                                         │
-├───────────────────────────────────────────────────────────────────────────┤
-│ ┌───┐ 🎵 Now Playing...                                                    │
-│ │📷 │ Title - Artist                                                      │  <-- DOM（下部固定プレイヤー）
-│ └───┘ [⏮️] [▶️] [⏭️]   01:24 ──────────────🔘───────────── 03:45   🔊 [🔘───] │
-└───────────────────────────────────────────────────────────────────────────┘
-```
+`src/shared/preload-api.ts`（型）→ `src/preload/preload.ts` → `window-manager.ts` の `ipcMain.handle` の順にそろえ、`WindowManager.destroy()` の `removeHandler` にも追加する。引数は main 側で型検証する。
 
-- **左側パネル（固定幅 240px）**: DOM。マイライブラリ/プレイリストナビゲーション。第一フェーズはダミー表示（将来的に機能実装）。
-- **中央パネル（可変幅）**: DOM。上部にキュー/履歴のタブ切り替え。下部にキュー/履歴リスト（サムネイル、曲名、アーティスト、追加者、削除ボタン）。
-- **右側パネル（固定幅 280px）**: DOM（上部メンバーリスト）＋ WebContentsView（下部プレイヤー）。ウィンドウリサイズ時に `setBounds()` で再計算。
-- **下部コントロール**: DOM。全幅。シークバー/音量/Now Playing情報。
-- **右クリックメニュー**: Renderer 内カスタム HTML/CSS で実装（ダークテーマ統一・ネイティブ外観より UI 一貫性を優先）
+### プレイヤー
 
-## 禁止事項・設計原則
+プレイヤーは `WebContentsView` や別 HTML ではなく **renderer の DOM 要素**。`sync/player-proxy.ts` が次の 2 実装を切り替える。切り替え基準はルーム作成時に選ぶ `RoomPlayerType`。
 
-- **Renderer から直接 Node.js API を呼び出さない** — 必ず Preload Script 経由の IPC を使用する
-- **Main Process で UI ロジックを持たない** — Main はウィンドウ/WebContentsView 管理に専念し、状態管理・音声配信は Renderer/SyncEngine に委ねる
-- **`nodeIntegration: false` を必須とする** — Renderer Process では Node.js 統合を完全に無効化
-- **`contextIsolation: true` を必須とする** — Preload Script と Renderer のコンテキストを分離
-- `webSecurity: false` や `allowRunningInsecureContent: true` の無闇な使用を禁止する — 必要な場合は最小限の範囲で `webPreferences` を調整
-- **プレーヤー HTML 内で外部スクリプトを `document.write` や `eval` で動的生成しない** — `<script src="...">` タグの直接読み込みに限定
-- **Server 側で永続化層を導入しない**（第一フェーズ） — ルーム・キュー・履歴はすべてインメモリ。永続化は将来拡張として扱う
-- **`autoplay-policy` を `webPreferences` と誤認しない** — `autoplay-policy=no-user-gesture-required` は `app.commandLine.appendSwitch()` で設定する
-- **WebContentsView のメモリリークを防ぐ** — プレイヤー切り替え時は必ず `removeChildView()` + `webContents.destroy()` を実行する
-- **サーバーは音声バイナリを一切転送しない** — 音声データは WebRTC P2P で直接送受信し、サーバーはシグナリング（SDP・ICE Candidate の中継）のみを行う
-- **WebRTC の `RTCConfiguration` にパブリック STUN サーバーを必ず指定する** — `stun:stun.l.google.com:19302` を設定し、NAT 越えを実現する（手動ポート開放は不要）
-- **第一フェーズの推奨同時接続数はホスト1人に対してゲスト3〜5人まで** — ホストのアップロード帯域（Mesh 接続の限界）を考慮したソフトリミット。超過時は参加拒否または警告を表示する
+- `youtube`: `dom-youtube-player.ts`（IFrame API）。`track.resolvedVideoId` を再生する。
+- `html-video`: `dom-video-player.ts`。IPC `resolveHtmlVideoSource`（yt-dlp）で直接 URL を取得し、先の 3 曲を事前読み込みする。
 
-## イベント設計原則（Socket.IO）
+Spotify / Apple Music の曲も、元サービスのメタデータと URL を保ったまま YouTube の動画に解決して再生する。
 
-- **クライアント → サーバー**: キュー操作は個別イベント（`AddTrack`, `RemoveTrack`, `ReorderQueue`）のみ使用する
-- **サーバー → クライアント**:
-  - `QueueUpdated`（キュー全体の同期）を基本とする
-  - `TrackAdded`（個別追加通知）は**追加ハイライト UX 用**として残す。キュー再描画は `QueueUpdated` に依存する
-- **WebRTC シグナリング**: サーバーは SDP および ICE Candidate の中継のみを行う。音声バイナリは一切転送しない。
-  - `SDPOffer` — ホストが対象ゲストに SDP offer を送信（サーバー経由）
-  - `SDPAnswer` — ゲストがホストに SDP answer を送信（サーバー経由）
-  - `ICECandidate` — ピア間で ICE candidate を交換（サーバー経由）
+`PlayerProxy` は 2 インスタンスある。共有ルーム用（`SyncEngine` が制御）と、ローカルプレイリスト再生のフローティングミニプレイヤー用（サーバーと同期しない）。audio-only 検索再生（`audio-only-player.ts`）はさらに別系統。
+
+### 同期モデル
+
+- キュー・履歴・再生状態の正はサーバー。**再生中の曲はキューに残ったまま**で、終了/スキップ時にキューから履歴へ移る。キューにない曲を指す `UpdatePlayerState` はサーバーが拒否し、renderer も古いローカル状態を無視する。
+- 空のキューに曲を追加すると、サーバーが自動で再生状態にする。
+- ホストは 1 秒ごとに `PlayerState` を送信し、`ended` で `TrackFinished` を送る。再生失敗した曲もホストが `TrackFinished` で飛ばす。ゲストは差が 2 秒を超えたときだけシークする。
+- イベント型は `src/shared/models.ts` の `ClientToServerEvents` / `ServerToClientEvents` が定義元。キュー操作は個別イベント（`AddTrack` / `RemoveTrack` / `ReorderQueue`）を送り、画面の再描画は `QueueUpdated` で行う（`TrackAdded` は追加ハイライト用）。
+- `RoomMode` は `Individual` のみ。WebRTC による HostBroadcast 配信は削除済み。
+
+### 永続化
+
+サーバーには永続化層を置かない。ユーザーのローカルプレイリストは main 経由でファイル保存し（`playlist-storage.ts`、`ui/playlist-store.ts` が旧 localStorage 形式から移行）、UI 設定は localStorage。
+
+## 設計上の制約
+
+- `contextIsolation: true` / `nodeIntegration: false` / `sandbox: true` を維持し、renderer から Node.js API を使わず preload 経由にする。`webSecurity: false` は使わない。
+- Main には UI ロジックや再生状態を持たせない。
+- `autoplay-policy` は `webPreferences` ではなく `app.commandLine.appendSwitch()` で設定する。
+
+## 秘密情報
+
+- YouTube Data API キーは環境変数 `YOUTUBE_DATA_API_KEY`（または `GOOGLE_API_KEY`）、あるいは `resources/youtube-data-api-key.txt`（git ignore 済み）。
+- ルートの `cookies.txt`（yt-dlp 用、git ignore 済み）と上記キーファイルは、`electron-builder.yml` の `extraResources` により**インストーラーに同梱される**。配布前に中身を確認する。
