@@ -841,47 +841,66 @@ async function resolveSpotify(
   }
 }
 
-async function resolveAppleMusic(url: string): Promise<TrackResolutionResult> {
+/**
+ * Extract the storefront and song ID from Apple Music / iTunes song URLs:
+ * `/{country}/album/{slug}/{albumId}?i={songId}` or `/{country}/song/{slug}/{songId}`.
+ * Album and playlist URLs do not identify a single song and return null.
+ */
+function parseAppleMusicSongUrl(url: string): { songId: string; country: string | null } | null {
   try {
-    const { statusCode, body } = await makeRequest(url);
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const country = /^[a-z]{2}$/iu.test(segments[0] || '') ? segments[0].toLowerCase() : null;
+    const songId = parsed.searchParams.get('i')
+      || (segments.includes('song') ? segments[segments.length - 1].replace(/^id/u, '') : '');
+    return /^\d+$/u.test(songId) ? { songId, country } : null;
+  } catch {
+    return null;
+  }
+}
+
+interface ITunesLookupResult {
+  wrapperType?: string;
+  kind?: string;
+  trackName?: string;
+  artistName?: string;
+  artworkUrl100?: string;
+  trackTimeMillis?: number;
+}
+
+/**
+ * Resolve Apple Music metadata with the public iTunes Lookup API (no key
+ * required).  Page titles are localized per storefront, so they cannot be
+ * split reliably into title and artist.
+ */
+async function resolveAppleMusic(url: string): Promise<TrackResolutionResult> {
+  const song = parseAppleMusicSongUrl(url);
+  if (!song) return { error: 'Apple Music の曲の URL を認識できませんでした。', url };
+
+  const query = new URLSearchParams({ id: song.songId });
+  if (song.country) query.set('country', song.country);
+
+  try {
+    const { statusCode, body } = await makeRequest(`https://itunes.apple.com/lookup?${query}`);
     if (statusCode < 200 || statusCode >= 300) {
       return fallbackResult(url, MusicServiceType.AppleMusic);
     }
 
-    // Extract og:title and og:image via regex (no external parser dependency)
-    const titleMatch = body.match(
-      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    ) || body.match(
-      /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["'][^>]*>/i,
-    );
-
-    const imageMatch = body.match(
-      /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i,
-    ) || body.match(
-      /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["'][^>]*>/i,
-    );
-
-    const rawTitle = titleMatch ? titleMatch[1].trim() : 'Unknown Track';
-    // Apple Music og:title often contains "Song Title by Artist on Apple Music"
-    let title = rawTitle;
-    let artist = 'Unknown Artist';
-    const byIdx = rawTitle.indexOf(' by ');
-    const onIdx = rawTitle.lastIndexOf(' on Apple Music');
-    if (byIdx > 0) {
-      title = rawTitle.slice(0, byIdx).trim();
-      artist = onIdx > byIdx
-        ? rawTitle.slice(byIdx + 4, onIdx).trim()
-        : rawTitle.slice(byIdx + 4).trim();
+    const data = JSON.parse(body) as { results?: ITunesLookupResult[] };
+    const result = data.results?.find((item) => item.wrapperType === 'track' && item.kind === 'song');
+    if (!result?.trackName || !result.artistName) {
+      return fallbackResult(url, MusicServiceType.AppleMusic);
     }
 
     return {
       id: generateId(),
       url,
       resolvedVideoId: null,
-      title,
-      artist,
-      thumbnailUrl: imageMatch ? imageMatch[1].trim() : '',
-      durationSeconds: null,
+      title: result.trackName,
+      artist: result.artistName,
+      // The artwork URL encodes its size; request a larger one than 100px.
+      thumbnailUrl: result.artworkUrl100?.replace('100x100bb', '600x600bb') || '',
+      durationSeconds: result.trackTimeMillis ? Math.round(result.trackTimeMillis / 1000) : null,
       service: MusicServiceType.AppleMusic,
     };
   } catch {
